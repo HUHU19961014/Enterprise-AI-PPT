@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "style": "通用商务风格",
+  "patterns": [
+    {
+      "id": "policy_timeline",
+      "name": "政策时间线页",
+      "description": "用于展示外部政策、法规演进，强调时间节点与影响。",
+      "keywords": ["政策", "法规", "时间", "演进", "趋势", "合规"]
+    },
+    {
+      "id": "pain_points",
+      "name": "痛点拆解页",
+      "description": "用于展示当前问题、根因与影响，适合售前诊断。",
+      "keywords": ["痛点", "问题", "挑战", "瓶颈", "风险"]
+    },
+    {
+      "id": "value_benefit",
+      "name": "价值收益页",
+      "description": "用于展示实施收益、业务价值与 ROI 方向。",
+      "keywords": ["价值", "收益", "效益", "回报", "提升"]
+    },
+    {
+      "id": "solution_architecture",
+      "name": "方案架构页",
+      "description": "用于展示系统模块、能力组件与平台架构。",
+      "keywords": ["架构", "平台", "模块", "能力", "系统", "应用"]
+    },
+    {
+      "id": "process_flow",
+      "name": "流程机制页",
+      "description": "用于展示端到端流程、阶段流转与执行闭环。",
+      "keywords": ["流程", "机制", "阶段", "闭环", "步骤", "流转"]
+    },
+    {
+      "id": "org_governance",
+      "name": "组织治理页",
+      "description": "用于展示组织分工、职责边界与治理机制。",
+      "keywords": ["组织", "治理", "职责", "团队", "协同", "分工"]
+    },
+    {
+      "id": "implementation_plan",
+      "name": "实施规划页",
+      "description": "用于展示里程碑、实施阶段与落地计划。",
+      "keywords": ["实施", "规划", "计划", "里程碑", "落地"]
+    },
+    {
+      "id": "capability_matrix",
+      "name": "能力矩阵页",
+      "description": "用于展示能力分层、对比评估与成熟度。",
+      "keywords": ["能力", "矩阵", "分层", "评估", "成熟度", "对比"]
+    },
+    {
+      "id": "case_proof",
+      "name": "案例佐证页",
+      "description": "用于展示案例、标杆与实践验证。",
+      "keywords": ["案例", "实践", "标杆", "验证", "经验"]
+    },
+    {
+      "id": "action_next_steps",
+      "name": "行动建议页",
+      "description": "用于输出结论、建议与下一步行动。",
+      "keywords": ["建议", "行动", "下一步", "结论", "路线图"]
+    }
+  ]
+}

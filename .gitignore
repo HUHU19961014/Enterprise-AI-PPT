@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.pytest_cache/
+projects/generated/
+*_QA.txt
+

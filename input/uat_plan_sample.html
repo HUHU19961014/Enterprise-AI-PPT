@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>SIE AutoPPT Sample</title>
+</head>
+<body>
+  <div class="slide">
+    <div class="title">项目概览与UAT阶段计划</div>
+    <div class="subtitle">按阶段推进测试执行，验证核心链路并明确责任边界。</div>
+
+    <div class="phase-grid">
+      <div class="phase">
+        <div class="phase-time">4/7-4/8</div>
+        <div class="phase-name">基础配置</div>
+        <div class="phase-code">BC-1 ~ BC-5</div>
+        <div class="phase-func">核心功能：类别管理 / 实体管理 / 文件类型 / 链路配置</div>
+        <div class="phase-owner">责任人：韩新宇、魏海明</div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">4/8-4/10</div>
+        <div class="phase-name">数据验证</div>
+        <div class="phase-code">DQ / ID</div>
+        <div class="phase-func">核心功能：数据查询 / 文件上传 / 文件检索</div>
+        <div class="phase-owner">责任人：韩新宇、魏海明</div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">4/9-4/14</div>
+        <div class="phase-name">任务管理</div>
+        <div class="phase-code">TM-1 ~ TM-5</div>
+        <div class="phase-func">核心功能：任务拆解 / 流转 / 催办 / 报告生成</div>
+        <div class="phase-owner">责任人：项目组全员</div>
+      </div>
+      <div class="phase">
+        <div class="phase-time">4/10-4/14</div>
+        <div class="phase-name">供应商协同</div>
+        <div class="phase-code">SD-1 / SD-2</div>
+        <div class="phase-func">核心功能：供应商上传 / OCR识别 / 补录 / 报告下载</div>
+        <div class="phase-owner">责任人：闫东法、杨玉婷</div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="panel">
+        <div class="panel-title">测试范围</div>
+        <div class="scenario-grid">
+          <div class="scenario">基础配置模块（BC）</div>
+          <div class="scenario">数据查询验证（DQ / ID）</div>
+          <div class="scenario">追函任务管理（TM）</div>
+          <div class="scenario">供应商文件管理（SD）</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">测试关注点</div>
+        <div class="note">配置是否支持业务快速启动，并可定位异常。</div>
+        <div class="note">数据与文件链路是否可追溯，关键节点可回放。</div>
+        <div class="note">任务是否形成闭环，异常是否可预警与催办。</div>
+        <div class="note">供应商协同是否稳定可用，报告是否可直接交付。</div>
+      </div>
+    </div>
+
+    <div class="footer">验证目标：确保追溯链路在真实业务场景下可以稳定运行并形成闭环。</div>
+  </div>
+</body>
+</html>
+
