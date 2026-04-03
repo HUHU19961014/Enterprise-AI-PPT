@@ -91,6 +91,9 @@
 - [`input/uat_plan_sample.html`](../input/uat_plan_sample.html)
 - [`input/architecture_program_sample.html`](../input/architecture_program_sample.html)
 - [`input/vendor_launch_sample.html`](../input/vendor_launch_sample.html)
+- [`input/invalid_empty.fail.html`](../input/invalid_empty.fail.html)
+
+其中 `*.fail.html` 表示“预期失败样例”，用于验证输入校验是否仍然生效。
 
 ## 当前页面映射规则
 

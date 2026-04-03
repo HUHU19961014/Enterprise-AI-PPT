@@ -86,6 +86,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 ```
 
 默认会批量执行 `input/*.html` 下的所有样例。
+其中 `*.fail.html` 会被当作预期失败样例，用来验证输入校验。
 
 ## 版本管理建议
 
