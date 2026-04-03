@@ -84,6 +84,8 @@ powershell -ExecutionPolicy Bypass -File .\run_sie_autoppt.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 ```
 
+默认会批量执行 `input/*.html` 下的所有样例。
+
 ## 版本管理建议
 
 当前项目已经启用 Git。建议后续按下面方式迭代：

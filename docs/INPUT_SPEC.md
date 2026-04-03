@@ -86,6 +86,12 @@
 
 [`input/uat_plan_sample.html`](../input/uat_plan_sample.html)
 
+项目当前还提供了多份回归样例，便于每次改完逻辑后批量验证：
+
+- [`input/uat_plan_sample.html`](../input/uat_plan_sample.html)
+- [`input/architecture_program_sample.html`](../input/architecture_program_sample.html)
+- [`input/vendor_launch_sample.html`](../input/vendor_launch_sample.html)
+
 ## 当前页面映射规则
 
 - 第 1 个正文页：
