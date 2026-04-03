@@ -4,5 +4,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 projects/generated/
+projects/*_preview/
 *_QA.txt
-

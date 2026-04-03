@@ -8,7 +8,7 @@ import textwrap
 import time
 import zipfile
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -33,6 +33,7 @@ from .config import (
     IDX_THEME,
 )
 from .patterns import infer_pattern
+from .reference_styles import build_reference_import_plan, populate_reference_body_pages
 
 
 DEFAULT_TITLE = "\u9879\u76ee\u6982\u89c8\u4e0eUAT\u9636\u6bb5\u8ba1\u5212"
@@ -67,6 +68,8 @@ class BodyPageSpec:
     bullets: list[str]
     pattern_id: str
     nav_title: str = ""
+    reference_style_id: str | None = None
+    payload: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -218,6 +221,111 @@ def build_focus_bullets(payload: InputPayload) -> list[str]:
     return bullets or [DEFAULT_EMPTY_FOCUS]
 
 
+def split_title_detail(text: str) -> tuple[str, str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    for sep in ("：", ":"):
+        if sep in normalized:
+            title, detail = normalized.split(sep, 1)
+            return title.strip(), detail.strip()
+    return normalized, normalized
+
+
+def compact_text(text: str, max_chars: int) -> str:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 1].rstrip(" ,;，；。") + "…"
+
+
+def concise_text(text: str, max_chars: int) -> str:
+    parts = [part.strip() for part in re.split(r"[。；;，,]", re.sub(r"\s+", " ", text)) if part.strip()]
+    if not parts:
+        return compact_text(text, max_chars)
+    candidate = parts[0]
+    if len(parts) > 1 and len(candidate) + len(parts[1]) + 1 <= max_chars:
+        candidate = f"{candidate}，{parts[1]}"
+    return compact_text(candidate, max_chars)
+
+
+def short_stage_label(text: str, max_chars: int = 8) -> str:
+    compact = re.sub(r"\s+", "", text)
+    compact = re.sub(r"\(.*?\)", "", compact)
+    compact = re.sub(r"（.*?）", "", compact)
+    compact = compact.replace("最佳实践", "").replace("工业化流水线", "流水线")
+    if len(compact) <= max_chars:
+        return compact
+    return compact[:max_chars]
+
+
+def derive_comparison_cards(raw_items: list[str], fallback_title: str, synthetic_tail: tuple[str, str]) -> list[dict[str, str]]:
+    cards = []
+    for item in raw_items:
+        title, detail = split_title_detail(item)
+        cards.append(
+            {
+                "title": compact_text(title or fallback_title, 14),
+                "detail": concise_text(detail or title, 34),
+            }
+        )
+    while len(cards) < 3:
+        cards.append(
+            {
+                "title": fallback_title,
+                "detail": concise_text(fallback_title, 34),
+            }
+        )
+    cards = cards[:3]
+    cards.append({"title": compact_text(synthetic_tail[0], 14), "detail": concise_text(synthetic_tail[1], 34)})
+    return cards
+
+
+def build_principle_items(success_bullets: list[str], steps: list[tuple[str, str]], conclusion: str) -> list[dict[str, str]]:
+    items = []
+    for item in success_bullets[:3]:
+        title, detail = split_title_detail(item)
+        items.append({"title": compact_text(title, 14), "detail": concise_text(detail, 28)})
+    for title, detail in steps[:4]:
+        items.append({"title": compact_text(short_stage_label(title, 10), 14), "detail": concise_text(detail, 28)})
+    while len(items) < 7:
+        items.append({"title": "协同交付", "detail": concise_text(conclusion or "保持模板骨架稳定，给 AI 留出创作空间。", 28)})
+    return items[:7]
+
+
+def build_pipeline_payload(steps: list[tuple[str, str]], conclusion: str, subtitle: str) -> dict[str, object]:
+    default_stages = [
+        ("阶段一\n业务抽象", ["梳理业务逻辑", "提炼关键信息", "统一输入结构", "输出标准数据", "明确渲染边界"]),
+        ("阶段二\n组件沉淀", ["抽取复用组件", "沉淀原子函数", "约束版式规则", "绑定模板元素", "控制样式参数"]),
+        ("阶段三\n自动渲染", ["批量生成页面", "写入目录导航", "完成基础 QA"]),
+        ("阶段四\n人工抛光", ["分组与对齐", "视觉微调", "检查遮挡溢出", "补充动画过渡", "形成交付底稿"]),
+        ("阶段五\n价值兑现", ["沉淀最佳实践", "回灌模板库", "效率与质量兼得", "形成稳定交付闭环"]),
+    ]
+    stage_headers = []
+    stage_tasks = []
+    for index, (title, detail) in enumerate(steps[:4], start=1):
+        stage_headers.append(f"阶段{index}\n{short_stage_label(title)}")
+        sentence_parts = [part.strip() for part in re.split(r"[。；;，,]", detail) if part.strip()]
+        tasks = [compact_text(part, 14) for part in sentence_parts[:5]]
+        while len(tasks) < len(default_stages[index - 1][1]):
+            tasks.append(default_stages[index - 1][1][len(tasks)])
+        stage_tasks.append(tasks[: len(default_stages[index - 1][1])])
+    while len(stage_headers) < 4:
+        title, tasks = default_stages[len(stage_headers)]
+        stage_headers.append(title)
+        stage_tasks.append(tasks)
+    stage_headers.append("阶段五\n价值兑现")
+    stage_tasks.append(default_stages[4][1])
+
+    stages = []
+    for header, tasks in zip(stage_headers[:5], stage_tasks[:5]):
+        stages.append({"header": header, "tasks": tasks})
+
+    return {
+        "intro": conclusion or subtitle,
+        "stages": stages,
+        "legend": ["AI", "Python", "模板", "设计"],
+    }
+
+
 def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
     if "comparison-grid" not in html or "pipeline-section" not in html:
         return None
@@ -235,30 +343,72 @@ def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
     if not any([cover_title, subtitle, danger_bullets, success_bullets, steps, conclusion]):
         return None
 
+    danger_cards = derive_comparison_cards(
+        danger_bullets,
+        fallback_title="视觉风险",
+        synthetic_tail=("调试成本放大", "长链路对话会放大排错与回归成本。"),
+    )
+    success_cards = derive_comparison_cards(
+        success_bullets,
+        fallback_title="工程化解法",
+        synthetic_tail=("保留创作空间", conclusion or "固定骨架，让 AI 在内容与表达上创造增量价值。"),
+    )
+    principle_items = build_principle_items(success_bullets, steps, conclusion)
+    comparison_payload = {
+        "headline": subtitle or "先识别能力边界，再设计工程化交付路径。",
+        "left_label": "● 一键生成式交付",
+        "right_label": "● 工程化协同交付",
+        "left_cards": danger_cards,
+        "right_cards": success_cards,
+        "center_kicker": "ENGINEERING COPILOT",
+        "center_title": "结构化内容交付中枢",
+        "center_subtitle": "内容引擎 · 模块化代码助手 · 人工视觉抛光",
+        "center_top_label": "协同原则层",
+        "center_section_title": "人机协同 (Human in the Loop)",
+        "center_row1_left": "结构化输入",
+        "center_row1_right": "模板化渲染",
+        "center_row2_left": "视觉 QA",
+        "center_row2_right": "人工微调",
+        "center_divider": "♦ 先守住骨架，再释放 AI 创作空间 ♦",
+        "center_bottom_label": "交付结果层",
+        "center_bottom_title": "高质量输出 (Deliverable)",
+        "center_bottom_left": "稳定复用",
+        "center_bottom_right": "风格一致",
+        "center_bottom_footer": "效率与质量兼得",
+        "bottom_left_caption": "识别边界",
+        "bottom_right_caption": "交付升级",
+    }
+
     page_specs = [
         BodyPageSpec(
-            page_key="pain_points",
-            title=danger_title or "\u4e3a\u4ec0\u4e48\u201c\u4e00\u952e\u751f\u6210\u5168\u5957\u201d\u5fc5\u8d25\uff1f",
+            page_key="comparison_upgrade",
+            title="\u80fd\u529b\u8fb9\u754c\u4e0e\u5de5\u7a0b\u5316\u89e3\u6cd5",
             subtitle=subtitle or DEFAULT_SUBTITLE,
-            bullets=danger_bullets[:4] or [DEFAULT_EMPTY_OVERVIEW],
-            pattern_id="pain_points",
-            nav_title=shorten_for_nav("\u80fd\u529b\u8fb9\u754c\u4e0e\u98ce\u9669"),
+            bullets=(danger_bullets[:3] + success_bullets[:3]) or [DEFAULT_EMPTY_OVERVIEW],
+            pattern_id="comparison_upgrade",
+            nav_title=shorten_for_nav("\u80fd\u529b\u8fb9\u754c\u5bf9\u6bd4"),
+            reference_style_id="comparison_upgrade",
+            payload=comparison_payload,
         ),
         BodyPageSpec(
-            page_key="engineering_solution",
-            title=success_title or "\u5de5\u7a0b\u5316\u89e3\u6cd5",
-            subtitle="\u5c06 AI \u5b9a\u4f4d\u4e3a\u5185\u5bb9\u5f15\u64ce\u4e0e\u6a21\u5757\u5316\u4ea4\u4ed8\u52a9\u624b\u3002",
-            bullets=success_bullets[:4] or [DEFAULT_EMPTY_SCOPE],
-            pattern_id="solution_architecture",
-            nav_title=shorten_for_nav("\u5de5\u7a0b\u5316\u89e3\u6cd5"),
+            page_key="practice_principles",
+            title=success_title or "\u5de5\u7a0b\u5316\u5b9e\u8df5\u539f\u5219",
+            subtitle=conclusion or DEFAULT_SCOPE_SUBTITLE,
+            bullets=[item["title"] for item in principle_items],
+            pattern_id="capability_ring",
+            nav_title=shorten_for_nav("\u5b9e\u8df5\u539f\u5219"),
+            reference_style_id="capability_ring",
+            payload={"items": principle_items},
         ),
         BodyPageSpec(
             page_key="delivery_pipeline",
             title=pipeline_title or "\u5de5\u4e1a\u5316\u6d41\u6c34\u7ebf\u5b9e\u65bd\u8def\u5f84",
             subtitle=conclusion or DEFAULT_FOCUS_SUBTITLE,
             bullets=[f"{step_title}\uff1a{step_desc}" for step_title, step_desc in steps[:4]] or [DEFAULT_EMPTY_FOCUS],
-            pattern_id="process_flow",
+            pattern_id="five_phase_path",
             nav_title=shorten_for_nav("\u5b9e\u65bd\u8def\u5f84"),
+            reference_style_id="five_phase_path",
+            payload=build_pipeline_payload(steps, conclusion, subtitle),
         ),
     ]
     return DeckSpec(
@@ -509,6 +659,29 @@ def repair_directory_slides_with_com(pptx_path: Path, source_idx: int, target_in
     return False
 
 
+def apply_reference_body_slides_with_com(pptx_path: Path, reference_body_path: Path | None, body_pages: list[BodyPageSpec]) -> bool:
+    import_plan = build_reference_import_plan(body_pages)
+    if not import_plan:
+        return True
+    if win32com is None or reference_body_path is None or not reference_body_path.exists():
+        return False
+    helper = Path(__file__).resolve().parents[1] / "apply_reference_body_slides.py"
+    command = [
+        sys.executable,
+        str(helper),
+        str(pptx_path.resolve()),
+        str(reference_body_path.resolve()),
+        "--mapping",
+        *[f"{target}={source}" for target, source in import_plan],
+    ]
+    for _ in range(5):
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        time.sleep(1.0)
+    return False
+
+
 def _slide_image_targets(pptx_path: Path, slide_no: int) -> set[str]:
     rel_path = f"ppt/slides/_rels/slide{slide_no}.xml.rels"
     targets: set[str] = set()
@@ -677,6 +850,8 @@ def render_body_pages(prs: Presentation, body_pages: list[BodyPageSpec], chapter
     for chapter_idx, directory_slide in enumerate(directory_slides):
         fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx)
     for page, body_slide in zip(body_pages, body_slides):
+        if page.reference_style_id:
+            continue
         fill_body_slide(body_slide, page)
 
 
@@ -710,6 +885,7 @@ def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_s
 def generate_ppt(
     template_path: Path,
     html_path: Path,
+    reference_body_path: Path | None,
     output_prefix: str,
     chapters: int,
     active_start: int,
@@ -750,6 +926,9 @@ def generate_ppt(
     prs = None
     gc.collect()
 
+    if not apply_reference_body_slides_with_com(out, reference_body_path, body_pages):
+        raise RuntimeError("Reference body slide import failed: could not apply reference PPT styles.")
     if not refresh_directory_clones(out, chapter_lines, active_start, len(body_pages)):
         raise RuntimeError("Directory slide clone repair failed: template image assets were not preserved.")
+    populate_reference_body_pages(out, body_pages)
     return out, pattern_ids, chapter_lines

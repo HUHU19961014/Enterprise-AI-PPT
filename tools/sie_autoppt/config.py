@@ -21,6 +21,7 @@ def _default_output_dir() -> Path:
 
 DEFAULT_TEMPLATE = TEMPLATES_DIR / "sie_template.pptx"
 DEFAULT_HTML = INPUT_DIR / "uat_plan_sample.html"
+DEFAULT_REFERENCE_BODY = INPUT_DIR / "reference_body_style.pptx"
 DEFAULT_OUTPUT_DIR = _default_output_dir()
 DEFAULT_OUTPUT_PREFIX = "SIE_AutoPPT"
 DEFAULT_MIN_TEMPLATE_SLIDES = 5
