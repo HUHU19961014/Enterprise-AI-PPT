@@ -1,10 +1,16 @@
+import gc
 import datetime
 import re
 import shutil
+import subprocess
+import sys
 import textwrap
+import time
+import zipfile
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree
 
 try:
     import win32com.client  # type: ignore[attr-defined]
@@ -39,6 +45,8 @@ DEFAULT_SUMMARY_TITLE = "\u603b\u7ed3\u4e0e\u884c\u52a8"
 DEFAULT_EMPTY_OVERVIEW = "\u8865\u5145 phase-* \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u9879\u76ee\u6982\u89c8\u9875\u3002"
 DEFAULT_EMPTY_SCOPE = "\u8865\u5145 scenario \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u6d4b\u8bd5\u8303\u56f4\u4e0e\u5173\u952e\u573a\u666f\u9875\u3002"
 DEFAULT_EMPTY_FOCUS = "\u8865\u5145 note \u6216 footer \u5185\u5bb9\u540e\uff0c\u53ef\u81ea\u52a8\u751f\u6210\u6d4b\u8bd5\u5173\u6ce8\u70b9\u4e0e\u9a8c\u6536\u6807\u51c6\u9875\u3002"
+THEME_TITLE_FONT_PT = 40
+DIRECTORY_TITLE_FONT_PT = 24
 
 
 @dataclass(frozen=True)
@@ -58,10 +66,23 @@ class BodyPageSpec:
     subtitle: str
     bullets: list[str]
     pattern_id: str
+    nav_title: str = ""
+
+
+@dataclass(frozen=True)
+class DeckSpec:
+    cover_title: str
+    body_pages: list[BodyPageSpec]
 
 
 def strip_tags(s: str) -> str:
     return re.sub(r"<.*?>", "", s).strip()
+
+
+def clean_heading_text(text: str) -> str:
+    cleaned = strip_tags(text)
+    cleaned = re.sub(r"^[^\w\u4e00-\u9fff]+", "", cleaned)
+    return cleaned.strip()
 
 
 def extract_single(html: str, cls: str) -> str:
@@ -71,6 +92,47 @@ def extract_single(html: str, cls: str) -> str:
 
 def extract_list(html: str, cls: str) -> list[str]:
     return [strip_tags(item) for item in re.findall(rf'<div class="{cls}">(.*?)</div>', html, flags=re.S)]
+
+
+def extract_first_tag_text(html: str, tag: str) -> str:
+    match = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", html, flags=re.S)
+    return strip_tags(match.group(1)) if match else ""
+
+
+def extract_tag_with_class(html: str, tag: str, class_name: str) -> str:
+    match = re.search(rf'<{tag}[^>]*class="[^"]*\b{re.escape(class_name)}\b[^"]*"[^>]*>(.*?)</{tag}>', html, flags=re.S)
+    return strip_tags(match.group(1)) if match else ""
+
+
+def extract_tag_inside_block(html: str, block_class_pattern: str, tag: str) -> str:
+    match = re.search(
+        rf'<div class="{block_class_pattern}">.*?<{tag}[^>]*>(.*?)</{tag}>',
+        html,
+        flags=re.S,
+    )
+    return strip_tags(match.group(1)) if match else ""
+
+
+def extract_list_items_from_block(html: str, class_pattern: str) -> list[str]:
+    match = re.search(
+        rf'<div class="{class_pattern}">.*?<ul>(.*?)</ul>',
+        html,
+        flags=re.S,
+    )
+    if not match:
+        return []
+    return [strip_tags(item) for item in re.findall(r"<li>(.*?)</li>", match.group(1), flags=re.S)]
+
+
+def extract_steps(html: str) -> list[tuple[str, str]]:
+    return [
+        (clean_heading_text(title), strip_tags(desc))
+        for title, desc in re.findall(
+            r'<div class="step">\s*<div class="step-number">.*?</div>\s*<h3>(.*?)</h3>\s*<p>(.*?)</p>\s*</div>',
+            html,
+            flags=re.S,
+        )
+    ]
 
 
 def extract_phases(html: str) -> list[dict[str, str]]:
@@ -156,7 +218,56 @@ def build_focus_bullets(payload: InputPayload) -> list[str]:
     return bullets or [DEFAULT_EMPTY_FOCUS]
 
 
-def build_page_specs(payload: InputPayload, chapters: int) -> list[BodyPageSpec]:
+def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
+    if "comparison-grid" not in html or "pipeline-section" not in html:
+        return None
+
+    cover_title = extract_first_tag_text(html, "h1")
+    subtitle = extract_tag_with_class(html, "p", "subtitle")
+    danger_title = clean_heading_text(extract_tag_inside_block(html, "card card-danger", "h2"))
+    danger_bullets = extract_list_items_from_block(html, "card card-danger")
+    success_title = clean_heading_text(extract_tag_inside_block(html, "card card-success", "h2"))
+    success_bullets = extract_list_items_from_block(html, "card card-success")
+    pipeline_title = clean_heading_text(extract_tag_inside_block(html, "pipeline-section", "h2"))
+    conclusion = extract_tag_with_class(html, "div", "conclusion")
+    steps = extract_steps(html)
+
+    if not any([cover_title, subtitle, danger_bullets, success_bullets, steps, conclusion]):
+        return None
+
+    page_specs = [
+        BodyPageSpec(
+            page_key="pain_points",
+            title=danger_title or "\u4e3a\u4ec0\u4e48\u201c\u4e00\u952e\u751f\u6210\u5168\u5957\u201d\u5fc5\u8d25\uff1f",
+            subtitle=subtitle or DEFAULT_SUBTITLE,
+            bullets=danger_bullets[:4] or [DEFAULT_EMPTY_OVERVIEW],
+            pattern_id="pain_points",
+            nav_title=shorten_for_nav("\u80fd\u529b\u8fb9\u754c\u4e0e\u98ce\u9669"),
+        ),
+        BodyPageSpec(
+            page_key="engineering_solution",
+            title=success_title or "\u5de5\u7a0b\u5316\u89e3\u6cd5",
+            subtitle="\u5c06 AI \u5b9a\u4f4d\u4e3a\u5185\u5bb9\u5f15\u64ce\u4e0e\u6a21\u5757\u5316\u4ea4\u4ed8\u52a9\u624b\u3002",
+            bullets=success_bullets[:4] or [DEFAULT_EMPTY_SCOPE],
+            pattern_id="solution_architecture",
+            nav_title=shorten_for_nav("\u5de5\u7a0b\u5316\u89e3\u6cd5"),
+        ),
+        BodyPageSpec(
+            page_key="delivery_pipeline",
+            title=pipeline_title or "\u5de5\u4e1a\u5316\u6d41\u6c34\u7ebf\u5b9e\u65bd\u8def\u5f84",
+            subtitle=conclusion or DEFAULT_FOCUS_SUBTITLE,
+            bullets=[f"{step_title}\uff1a{step_desc}" for step_title, step_desc in steps[:4]] or [DEFAULT_EMPTY_FOCUS],
+            pattern_id="process_flow",
+            nav_title=shorten_for_nav("\u5b9e\u65bd\u8def\u5f84"),
+        ),
+    ]
+    return DeckSpec(
+        cover_title=cover_title or DEFAULT_TITLE,
+        body_pages=page_specs[: max(1, min(chapters, 3))],
+    )
+
+
+def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
     requested_chapters = max(1, min(chapters, 3))
     page_specs = [
         BodyPageSpec(
@@ -165,6 +276,7 @@ def build_page_specs(payload: InputPayload, chapters: int) -> list[BodyPageSpec]
             subtitle=payload.subtitle or DEFAULT_SUBTITLE,
             bullets=build_overview_bullets(payload),
             pattern_id="general_business",
+            nav_title=shorten_for_nav(payload.title or DEFAULT_TITLE),
         ),
         BodyPageSpec(
             page_key="scope",
@@ -172,6 +284,7 @@ def build_page_specs(payload: InputPayload, chapters: int) -> list[BodyPageSpec]
             subtitle=DEFAULT_SCOPE_SUBTITLE,
             bullets=build_scope_bullets(payload),
             pattern_id="general_business",
+            nav_title=shorten_for_nav(DEFAULT_SCOPE_TITLE),
         ),
         BodyPageSpec(
             page_key="focus",
@@ -179,23 +292,28 @@ def build_page_specs(payload: InputPayload, chapters: int) -> list[BodyPageSpec]
             subtitle=payload.footer or DEFAULT_FOCUS_SUBTITLE,
             bullets=build_focus_bullets(payload),
             pattern_id="general_business",
+            nav_title=shorten_for_nav(DEFAULT_FOCUS_TITLE),
         ),
     ][:requested_chapters]
 
-    return [
-        BodyPageSpec(
-            page_key=page.page_key,
-            title=page.title,
-            subtitle=page.subtitle,
-            bullets=page.bullets,
-            pattern_id=infer_pattern(page.title, page.bullets),
-        )
-        for page in page_specs
-    ]
+    return DeckSpec(
+        cover_title=payload.title or DEFAULT_TITLE,
+        body_pages=[
+            BodyPageSpec(
+                page_key=page.page_key,
+                title=page.title,
+                subtitle=page.subtitle,
+                bullets=page.bullets,
+                pattern_id=infer_pattern(page.title, page.bullets),
+                nav_title=page.nav_title or shorten_for_nav(page.title),
+            )
+            for page in page_specs
+        ],
+    )
 
 
 def build_directory_lines(body_pages: list[BodyPageSpec]) -> list[str]:
-    lines = [page.title for page in body_pages[:5]]
+    lines = [page.nav_title or page.title for page in body_pages[:5]]
     for fallback in (DEFAULT_SUMMARY_TITLE, "Q&A"):
         if len(lines) >= 5:
             break
@@ -225,6 +343,35 @@ def normalize_text_for_box(text: str, max_chars: int = 44) -> str:
     return "\n".join(lines[:4])
 
 
+def choose_title_font_size(text: str, default: int = 24) -> int:
+    n = len(text)
+    if n > 28:
+        return 16
+    if n > 22:
+        return 18
+    if n > 16:
+        return 20
+    return default
+
+
+def choose_nav_font_size(text: str) -> int:
+    return DIRECTORY_TITLE_FONT_PT
+
+
+def shorten_for_nav(text: str, max_chars: int = 10) -> str:
+    compact = re.sub(r"\s+", "", text)
+    compact = re.sub(r"（.*?）", "", compact)
+    compact = compact.replace("(最佳实践)", "").replace("(V3.0战略视图)", "")
+    compact = compact.replace("：", "").replace("?", "").replace("？", "")
+    if len(compact) <= max_chars:
+        return compact
+    if "与" in compact:
+        candidate = "与".join(compact.split("与")[:2])
+        if len(candidate) <= max_chars:
+            return candidate
+    return compact[:max_chars]
+
+
 def choose_font_size_by_length(text: str, base: int = 13) -> int:
     n = len(text)
     if n > 120:
@@ -236,16 +383,19 @@ def choose_font_size_by_length(text: str, base: int = 13) -> int:
     return base
 
 
-def replace_text_preserve_runs(shape, text: str, force_color=None):
+def replace_text_preserve_runs(shape, text: str, force_color=None, font_size_pt: int | None = None):
     if not getattr(shape, "has_text_frame", False):
         return
     text_frame = shape.text_frame
+    text_frame.word_wrap = True
     if not text_frame.paragraphs:
         return
     paragraph = text_frame.paragraphs[0]
     if paragraph.runs:
         paragraph.runs[0].text = text
         paragraph.runs[0].font.name = FONT_NAME
+        if font_size_pt is not None:
+            paragraph.runs[0].font.size = Pt(font_size_pt)
         if force_color is not None:
             paragraph.runs[0].font.color.rgb = RGBColor(*force_color)
         for run in paragraph.runs[1:]:
@@ -254,6 +404,8 @@ def replace_text_preserve_runs(shape, text: str, force_color=None):
         run = paragraph.add_run()
         run.text = text
         run.font.name = FONT_NAME
+        if font_size_pt is not None:
+            run.font.size = Pt(font_size_pt)
         if force_color is not None:
             run.font.color.rgb = RGBColor(*force_color)
     for extra_paragraph in text_frame.paragraphs[1:]:
@@ -266,6 +418,7 @@ def set_shape_text_with_color(shape, text: str, color, size_pt=None, bold=None):
         return
     text_frame = shape.text_frame
     text_frame.text = text
+    text_frame.word_wrap = True
     for paragraph in text_frame.paragraphs:
         paragraph.alignment = PP_ALIGN.LEFT
         for run in paragraph.runs:
@@ -327,29 +480,61 @@ def fill_directory_slide(slide, chapter_lines, active_chapter_index: int):
     safe_active_index = max(0, min(active_chapter_index, len(chapter_lines) - 1))
     for i, shape in enumerate(title_boxes[: len(chapter_lines)]):
         color = COLOR_ACTIVE if i == safe_active_index else COLOR_INACTIVE
-        replace_text_preserve_runs(shape, chapter_lines[i], force_color=color)
+        replace_text_preserve_runs(
+            shape,
+            chapter_lines[i],
+            force_color=color,
+            font_size_pt=DIRECTORY_TITLE_FONT_PT,
+        )
 
 
 def repair_directory_slides_with_com(pptx_path: Path, source_idx: int, target_indices: list[int]) -> bool:
     if win32com is None:
         return False
-    try:
-        app = win32com.client.Dispatch("PowerPoint.Application")
-        app.Visible = 1
-        pres = app.Presentations.Open(str(pptx_path), WithWindow=False)
-    except Exception:
-        return False
+    helper = Path(__file__).resolve().parents[1] / "repair_directory_slides.py"
+    command = [
+        sys.executable,
+        str(helper),
+        str(pptx_path.resolve()),
+        "--source-idx",
+        str(source_idx),
+        "--targets",
+        *[str(target) for target in target_indices],
+    ]
+    for _ in range(5):
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode == 0:
+            return True
+        time.sleep(1.0)
+    return False
 
-    try:
-        for target in sorted(target_indices, reverse=True):
-            pres.Slides(target).Delete()
-            duplicate = pres.Slides(source_idx).Duplicate()
-            duplicate.Item(1).MoveTo(target)
-        pres.Save()
+
+def _slide_image_targets(pptx_path: Path, slide_no: int) -> set[str]:
+    rel_path = f"ppt/slides/_rels/slide{slide_no}.xml.rels"
+    targets: set[str] = set()
+    with zipfile.ZipFile(pptx_path) as package:
+        try:
+            root = ElementTree.fromstring(package.read(rel_path))
+        except KeyError:
+            return targets
+    for rel in root:
+        rel_type = rel.attrib.get("Type", "")
+        if rel_type.endswith("/image"):
+            target = rel.attrib.get("Target", "")
+            if target:
+                targets.add(target)
+    return targets
+
+
+def directory_assets_preserved(pptx_path: Path, source_idx: int, target_indices: list[int]) -> bool:
+    source_targets = _slide_image_targets(pptx_path, source_idx)
+    if not source_targets:
         return True
-    finally:
-        pres.Close()
-        app.Quit()
+    for slide_no in target_indices:
+        target_assets = _slide_image_targets(pptx_path, slide_no)
+        if not source_targets.issubset(target_assets):
+            return False
+    return True
 
 
 def _render_cards_2x2(slide, bullets: list[str]):
@@ -414,10 +599,13 @@ PATTERN_RENDERERS = {
 }
 
 
-def _clear_body_render_area(slide):
+def _clear_body_render_area(slide, protected_shapes=None):
+    protected_shapes = list(protected_shapes or [])
     removable = []
     for shape in slide.shapes:
-        if 1700000 < shape.top < 6200000:
+        if any(shape is protected for protected in protected_shapes):
+            continue
+        if 1200000 < shape.top < 6200000:
             removable.append(shape)
     for shape in removable:
         element = shape._element
@@ -428,10 +616,21 @@ def fill_body_slide(slide, page: BodyPageSpec):
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
     title_candidates = [shape for shape in texts if shape.top < 300000 and shape.width > 7000000]
     if title_candidates:
-        replace_text_preserve_runs(title_candidates[0], page.title, force_color=COLOR_ACTIVE)
+        replace_text_preserve_runs(
+            title_candidates[0],
+            page.title,
+            force_color=COLOR_ACTIVE,
+            font_size_pt=choose_title_font_size(page.title),
+        )
     else:
         textbox = slide.shapes.add_textbox(166370, 36830, 10034086, 480060)
-        set_shape_text_with_color(textbox, page.title, COLOR_ACTIVE, size_pt=24, bold=True)
+        set_shape_text_with_color(
+            textbox,
+            page.title,
+            COLOR_ACTIVE,
+            size_pt=choose_title_font_size(page.title),
+            bold=True,
+        )
 
     subtitle_candidates = [
         shape
@@ -441,7 +640,8 @@ def fill_body_slide(slide, page: BodyPageSpec):
     if subtitle_candidates:
         replace_text_preserve_runs(subtitle_candidates[0], page.subtitle)
 
-    _clear_body_render_area(slide)
+    protected_shapes = title_candidates + subtitle_candidates[:1]
+    _clear_body_render_area(slide, protected_shapes=protected_shapes)
     renderer = PATTERN_RENDERERS.get(page.pattern_id, _render_cards_2x2)
     renderer(slide, page.bullets)
 
@@ -458,38 +658,53 @@ def apply_theme_title(prs: Presentation, title: str):
     title_candidates = [shape for shape in theme_texts if 1500000 < shape.top < 2300000 and shape.width > 5000000]
     if title_candidates:
         main_title = max(title_candidates, key=lambda shape: shape.width)
-        set_shape_text_with_color(main_title, title, COLOR_ACTIVE)
+        set_shape_text_with_color(main_title, title, COLOR_ACTIVE, size_pt=THEME_TITLE_FONT_PT)
 
 
 def render_body_pages(prs: Presentation, body_pages: list[BodyPageSpec], chapter_lines: list[str], active_start: int):
-    fill_directory_slide(prs.slides[IDX_DIRECTORY], chapter_lines, active_start)
-    fill_body_slide(prs.slides[IDX_BODY_TEMPLATE], body_pages[0])
-
+    directory_slides = [prs.slides[IDX_DIRECTORY]]
+    body_slides = [prs.slides[IDX_BODY_TEMPLATE]]
     insert_after = IDX_BODY_TEMPLATE
-    for chapter_idx, page in enumerate(body_pages[1:], start=1):
+    for _ in body_pages[1:]:
         new_directory = clone_slide_after(prs, IDX_DIRECTORY, insert_after, keep_rel_ids=True)
-        fill_directory_slide(new_directory, chapter_lines, active_start + chapter_idx)
+        directory_slides.append(new_directory)
         insert_after += 1
 
         new_body = clone_slide_after(prs, IDX_BODY_TEMPLATE, insert_after, keep_rel_ids=False)
-        fill_body_slide(new_body, page)
+        body_slides.append(new_body)
         insert_after += 1
+
+    for chapter_idx, directory_slide in enumerate(directory_slides):
+        fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx)
+    for page, body_slide in zip(body_pages, body_slides):
+        fill_body_slide(body_slide, page)
 
 
 def refresh_directory_clones(pptx_path: Path, chapter_lines: list[str], active_start: int, body_page_count: int):
     targets = [IDX_DIRECTORY + 1 + i * 2 for i in range(1, body_page_count)]
     if not targets:
-        return
-    if not repair_directory_slides_with_com(pptx_path, source_idx=IDX_DIRECTORY + 1, target_indices=targets):
-        return
+        return True
 
-    prs_reloaded = Presentation(str(pptx_path))
-    fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
-    for offset, directory_slide_no in enumerate(targets, start=1):
-        slide_index = directory_slide_no - 1
-        if slide_index < len(prs_reloaded.slides):
-            fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
-    prs_reloaded.save(str(pptx_path))
+    source_idx = IDX_DIRECTORY + 1
+    for _ in range(3):
+        if not repair_directory_slides_with_com(pptx_path, source_idx=source_idx, target_indices=targets):
+            continue
+
+        prs_reloaded = Presentation(str(pptx_path))
+        fill_directory_slide(prs_reloaded.slides[IDX_DIRECTORY], chapter_lines, active_start)
+        for offset, directory_slide_no in enumerate(targets, start=1):
+            slide_index = directory_slide_no - 1
+            if slide_index < len(prs_reloaded.slides):
+                fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset)
+        prs_reloaded.save(str(pptx_path))
+        prs_reloaded = None
+        gc.collect()
+
+        if directory_assets_preserved(pptx_path, source_idx=source_idx, target_indices=targets):
+            return True
+        time.sleep(1.0)
+
+    return False
 
 
 def generate_ppt(
@@ -506,9 +721,14 @@ def generate_ppt(
         raise FileNotFoundError(f"HTML not found: {html_path}")
 
     html = html_path.read_text(encoding="utf-8")
-    payload = parse_html_payload(html)
-    validate_payload(payload)
-    body_pages = build_page_specs(payload, chapters)
+    specialized_deck = build_card_analysis_page_specs(html, chapters)
+    if specialized_deck:
+        deck = specialized_deck
+    else:
+        payload = parse_html_payload(html)
+        validate_payload(payload)
+        deck = build_page_specs(payload, chapters)
+    body_pages = deck.body_pages
     chapter_lines = build_directory_lines(body_pages)
     pattern_ids = [page.pattern_id for page in body_pages]
 
@@ -522,11 +742,14 @@ def generate_ppt(
             f"\u6a21\u677f\u9875\u6570\u4e0d\u8db3\uff0c\u81f3\u5c11\u9700\u8981 {DEFAULT_MIN_TEMPLATE_SLIDES} \u9875\uff0c\u5b9e\u9645\u4e3a {len(prs.slides)} \u9875\u3002"
         )
 
-    apply_theme_title(prs, body_pages[0].title)
+    apply_theme_title(prs, deck.cover_title)
     thanks_slide_id = int(prs.slides._sldIdLst[len(prs.slides) - 1].id)
     render_body_pages(prs, body_pages, chapter_lines, active_start)
     ensure_last_slide_is_thanks(prs, thanks_slide_id)
     prs.save(str(out))
+    prs = None
+    gc.collect()
 
-    refresh_directory_clones(out, chapter_lines, active_start, len(body_pages))
+    if not refresh_directory_clones(out, chapter_lines, active_start, len(body_pages)):
+        raise RuntimeError("Directory slide clone repair failed: template image assets were not preserved.")
     return out, pattern_ids, chapter_lines

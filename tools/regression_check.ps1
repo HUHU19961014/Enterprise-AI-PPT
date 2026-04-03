@@ -36,6 +36,15 @@ function Assert-QA($reportPath, $caseName) {
   if ([int]$overflow.Groups[1].Value -gt 0) {
     throw "QA failed for ${caseName}: overflow_risk_boxes > 0."
   }
+  if ($qa -notmatch "check_theme_title_font_40: PASS") {
+    throw "QA failed for ${caseName}: theme title font is not fixed at 40pt."
+  }
+  if ($qa -notmatch "check_directory_title_font_24: PASS") {
+    throw "QA failed for ${caseName}: directory title font is not fixed at 24pt."
+  }
+  if ($qa -notmatch "check_directory_assets_preserved: PASS") {
+    throw "QA failed for ${caseName}: directory slide assets were not preserved."
+  }
 }
 
 function Assert-ExpectedFailure($outputLines, $caseName) {
