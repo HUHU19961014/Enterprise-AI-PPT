@@ -5,7 +5,7 @@ from xml.etree import ElementTree
 
 from pptx import Presentation
 
-from .config import IDX_THEME
+from ..config import IDX_THEME
 
 
 EXPECTED_THEME_TITLE_FONT_PT = 40.0
@@ -119,31 +119,7 @@ def _directory_assets_preserved(pptx_path: Path, directory_slides: list[int]) ->
     return True
 
 
-def write_qa_report(pptx_path: Path, chapter_count: int, pattern_ids=None, chapter_lines=None) -> Path:
-    prs = Presentation(str(pptx_path))
-    chapter_lines = chapter_lines or []
-    lines = []
-    lines.append("SIE AutoPPT QA Report")
-    lines.append(f"file: {pptx_path}")
-    lines.append(f"slides: {len(prs.slides)}")
-
-    has_ending_last = _is_ending_slide(prs.slides[-1])
-    lines.append(f"check_ending_last: {'PASS' if has_ending_last else 'WARN'}")
-
-    expected_dirs = [3 + i * 2 for i in range(chapter_count)]
-    actual_dirs = [i for i, slide in enumerate(prs.slides, start=1) if _is_directory_slide(slide, chapter_lines)]
-    lines.append(f"expected_directory_pages: {expected_dirs}")
-    lines.append(f"actual_directory_pages:   {actual_dirs}")
-    if pattern_ids:
-        lines.append(f"semantic_patterns: {pattern_ids}")
-    lines.append(f"check_theme_title_font_40: {'PASS' if _theme_title_font_ok(prs) else 'WARN'}")
-    lines.append(
-        f"check_directory_title_font_24: {'PASS' if _directory_title_font_ok(prs, actual_dirs, chapter_lines) else 'WARN'}"
-    )
-    lines.append(
-        f"check_directory_assets_preserved: {'PASS' if _directory_assets_preserved(pptx_path, actual_dirs) else 'WARN'}"
-    )
-
+def _overflow_risk_boxes(prs: Presentation) -> int:
     risk = 0
     for slide in prs.slides:
         for shape in slide.shapes:
@@ -151,9 +127,35 @@ def write_qa_report(pptx_path: Path, chapter_count: int, pattern_ids=None, chapt
                 text = re.sub(r"\s+", " ", shape.text_frame.text).strip()
                 if len(text) > 180:
                     risk += 1
-    lines.append(f"overflow_risk_boxes: {risk}")
-    lines.append("note: overflow_risk_boxes > 0 means manual review recommended.")
+    return risk
 
-    report = pptx_path.with_name(pptx_path.stem + "_QA.txt")
-    report.write_text("\n".join(lines), encoding="utf-8")
-    return report
+
+def build_qa_result(pptx_path: Path, chapter_count: int, pattern_ids=None, chapter_lines=None) -> dict[str, object]:
+    prs = Presentation(str(pptx_path))
+    chapter_lines = chapter_lines or []
+
+    has_ending_last = _is_ending_slide(prs.slides[-1])
+    expected_dirs = [3 + i * 2 for i in range(chapter_count)]
+    actual_dirs = [i for i, slide in enumerate(prs.slides, start=1) if _is_directory_slide(slide, chapter_lines)]
+    overflow_risk = _overflow_risk_boxes(prs)
+
+    return {
+        "file": str(pptx_path),
+        "slides": len(prs.slides),
+        "expected_directory_pages": expected_dirs,
+        "actual_directory_pages": actual_dirs,
+        "semantic_patterns": list(pattern_ids or []),
+        "chapter_lines": list(chapter_lines),
+        "checks": {
+            "ending_last": "PASS" if has_ending_last else "WARN",
+            "theme_title_font_40": "PASS" if _theme_title_font_ok(prs) else "WARN",
+            "directory_title_font_24": "PASS" if _directory_title_font_ok(prs, actual_dirs, chapter_lines) else "WARN",
+            "directory_assets_preserved": "PASS" if _directory_assets_preserved(pptx_path, actual_dirs) else "WARN",
+        },
+        "metrics": {
+            "overflow_risk_boxes": overflow_risk,
+        },
+        "notes": [
+            "overflow_risk_boxes > 0 means manual review recommended.",
+        ],
+    }
