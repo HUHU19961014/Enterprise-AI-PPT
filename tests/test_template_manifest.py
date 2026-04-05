@@ -25,9 +25,12 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.slide_roles.directory, 2)
         self.assertEqual(manifest.fonts.theme_title_pt, 40.0)
         self.assertEqual(manifest.fonts.directory_title_pt, 24.0)
-        self.assertEqual(manifest.slide_pools.directory, (2, 4, 6))
-        self.assertEqual(manifest.slide_pools.body, (3, 5, 7))
-        self.assertEqual(manifest.slide_pools.ending, 8)
+        self.assertEqual(len(manifest.slide_pools.directory), 20)
+        self.assertEqual(manifest.slide_pools.directory[:3], (2, 4, 6))
+        self.assertEqual(manifest.slide_pools.directory[-1], 40)
+        self.assertEqual(manifest.slide_pools.body[:3], (3, 5, 7))
+        self.assertEqual(manifest.slide_pools.body[-1], 41)
+        self.assertEqual(manifest.slide_pools.ending, 46)
         self.assertIn("general_business", manifest.render_layouts)
 
     def test_template_path_resolves_to_adjacent_manifest(self):
@@ -46,7 +49,7 @@ class TemplateManifestTests(unittest.TestCase):
         invalid_manifest = replace(manifest, slide_pools=invalid_pool)
 
         with self.assertRaises(ValueError):
-            validate_slide_pool_configuration(invalid_manifest, body_page_count=3, slide_count=9)
+            validate_slide_pool_configuration(invalid_manifest, body_page_count=3, slide_count=47)
 
     def test_manifest_supports_cm_units_for_geometry(self):
         data = json.loads(DEFAULT_TEMPLATE_MANIFEST.read_text(encoding="utf-8"))

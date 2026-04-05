@@ -5,6 +5,8 @@
 The project no longer assumes that users hand-write compliant HTML first. It supports:
 
 - classic HTML -> PPTX rendering
+  - legacy `phase-*` / `scenario` / `note` blocks
+  - explicit `<slide data-pattern="...">...</slide>` pages
 - `DeckSpec JSON` planning and rendering
 - AI topic -> `DeckSpec JSON` -> PPTX
 - OpenAI-compatible hosted providers
@@ -31,7 +33,7 @@ python .\tools\sie_autoppt_cli.py
 
 Supported workflow stages:
 
-- `make`: legacy one-step HTML -> PPTX
+- `make`: one-step HTML -> PPTX
 - `plan`: HTML -> `DeckSpec JSON`
 - `render`: `DeckSpec JSON` -> PPTX
 - `ai-plan`: topic -> `DeckSpec JSON`
@@ -44,6 +46,27 @@ Examples:
 python .\tools\sie_autoppt_cli.py plan `
   --html .\input\uat_plan_sample.html `
   --plan-output .\projects\generated\planned.deck.json
+```
+
+```html
+<div class="title">Supply Chain Compliance Program</div>
+
+<slide data-pattern="overview">
+  <h2>Global regulation trend</h2>
+  <ul>
+    <li>GDPR and cross-border data controls</li>
+    <li>Supply-chain due diligence requirements</li>
+  </ul>
+</slide>
+
+<slide data-pattern="process_flow">
+  <h2>Implementation roadmap</h2>
+  <ul>
+    <li>Assess</li>
+    <li>Design</li>
+    <li>Launch</li>
+  </ul>
+</slide>
 ```
 
 ```powershell
@@ -65,6 +88,11 @@ AI planning page-count options:
 - `--chapters`: exact body-page count
 - `--min-slides` / `--max-slides`: let AI choose inside a range
 - if none are provided, the planner now infers a reasonable range from source density instead of forcing 3 pages
+
+HTML planning/rendering page-count options:
+
+- if `--chapters` is omitted, legacy HTML keeps all detected legacy sections and `<slide>` HTML keeps all detected slide tags
+- `--chapters` still works as an explicit cap for both `plan` and `make`
 
 ## Provider Compatibility
 
@@ -137,6 +165,7 @@ Reference-style body pages now use native PPTX package merge by default. The bun
 3. fallback page number
 
 Templates without `slide_pools` still have a legacy runtime clone path, but it is now explicitly deprecated. New templates should migrate to preallocated pools.
+The bundled default template now ships with a 20-pair preallocated slide pool, so classic HTML decks are no longer limited to three body pages.
 
 ## Docs
 

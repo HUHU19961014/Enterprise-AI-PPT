@@ -14,9 +14,9 @@ class UpgradeTemplatePoolTests(unittest.TestCase):
     def test_validate_template_pool_accepts_default_template(self):
         summary = validate_template_pool(DEFAULT_TEMPLATE)
 
-        self.assertEqual(summary["slides"], 9)
-        self.assertEqual(summary["required_pairs"], 3)
-        self.assertEqual(summary["ending_slide_no"], 9)
+        self.assertEqual(summary["slides"], 47)
+        self.assertEqual(summary["required_pairs"], 20)
+        self.assertEqual(summary["ending_slide_no"], 47)
 
     def test_validate_template_pool_rejects_missing_ending_slide(self):
         with tempfile.TemporaryDirectory() as temp_dir:

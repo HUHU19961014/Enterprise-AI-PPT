@@ -159,3 +159,33 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertTrue(rendered_artifacts.output_path.exists())
             self.assertEqual(rendered_artifacts.render_trace.input_kind, "deck_spec_json")
             self.assertEqual(rendered_artifacts.deck_plan.pattern_ids, planned_artifacts.deck_plan.pattern_ids)
+
+    def test_generate_slide_tag_html_with_more_than_three_pages(self):
+        html = """
+        <div class="title">Supply Chain Compliance</div>
+        <slide data-pattern="general_business"><h2>Overview</h2><p>Global pressure</p></slide>
+        <slide data-pattern="process_flow"><h2>Roadmap</h2><ul><li>Assess</li><li>Design</li><li>Launch</li></ul></slide>
+        <slide data-pattern="solution_architecture"><h2>Architecture</h2><p>Data layer</p><p>Application layer</p></slide>
+        <slide data-pattern="org_governance"><h2>Governance</h2><p>Clarify ownership</p></slide>
+        <slide><h2>Summary</h2><p>Close the loop</p></slide>
+        <slide><h2>Next Step</h2><p>Start pilot</p></slide>
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            html_path = Path(temp_dir) / "slides.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            artifacts = generate_ppt_artifacts_from_html(
+                template_path=DEFAULT_TEMPLATE,
+                html_path=html_path,
+                reference_body_path=None,
+                output_prefix="Slide_Tag_Six_Pages",
+                chapters=None,
+                active_start=0,
+                output_dir=Path(temp_dir),
+            )
+
+            self.assertTrue(artifacts.output_path.exists())
+            self.assertEqual(len(artifacts.deck_plan.pattern_ids), 6)
+            self.assertEqual(artifacts.deck_plan.pattern_ids[:4], ["general_business", "process_flow", "solution_architecture", "org_governance"])
+            self.assertEqual(artifacts.render_trace.body_render_mode, "preallocated_pool")

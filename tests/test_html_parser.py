@@ -2,6 +2,7 @@ import unittest
 
 from tools.sie_autoppt.inputs.html_parser import (
     extract_list_items_from_block,
+    extract_slides,
     extract_steps,
     extract_tag_inside_block,
     parse_html_payload,
@@ -45,6 +46,7 @@ class HtmlParserTests(unittest.TestCase):
         self.assertEqual(payload.scenarios, ["Scenario A", "Scenario B"])
         self.assertEqual(payload.notes, ["Important note"])
         self.assertEqual(payload.footer, "Project footer")
+        self.assertEqual(payload.slides, [])
 
     def test_validate_payload_rejects_empty_html(self):
         payload = parse_html_payload("<html><body></body></html>")
@@ -77,22 +79,51 @@ class HtmlParserTests(unittest.TestCase):
         self.assertEqual(payload.scenarios, ["Scenario A"])
         self.assertEqual(payload.notes, ["Risk watch"])
 
+    def test_extract_slides_supports_data_pattern_and_paragraph_content(self):
+        html = """
+        <div class="title">Deck Cover</div>
+        <slide data-pattern="process_flow">
+          <h2>Implementation Roadmap</h2>
+          <p class="subtitle">Four coordinated steps</p>
+          <ul>
+            <li>Assess current state</li>
+            <li>Define rollout path</li>
+          </ul>
+        </slide>
+        <slide>
+          <h2>Architecture</h2>
+          <p>Business domain</p>
+          <p>Application layer</p>
+        </slide>
+        """
+
+        slides = extract_slides(html)
+        payload = parse_html_payload(html)
+
+        self.assertEqual(len(slides), 2)
+        self.assertEqual(slides[0].pattern_id, "process_flow")
+        self.assertEqual(slides[0].title, "Implementation Roadmap")
+        self.assertEqual(slides[0].subtitle, "Four coordinated steps")
+        self.assertEqual(slides[0].bullets, ["Assess current state", "Define rollout path"])
+        self.assertEqual(slides[1].bullets, ["Business domain", "Application layer"])
+        self.assertEqual(payload.slides, slides)
+
     def test_block_extractors_handle_multi_class_blocks(self):
         html = """
         <div class="card card-danger">
-          <h2><span>01</span> 关键风险</h2>
+          <h2><span>01</span> Key Risk</h2>
           <ul>
-            <li><strong>风险一</strong>：说明</li>
-            <li>风险二</li>
+            <li><strong>Risk One</strong>: description</li>
+            <li>Risk Two</li>
           </ul>
         </div>
         <div class="step">
           <div class="step-number">1</div>
-          <h3><span>阶段一</span></h3>
-          <p>梳理现状与目标</p>
+          <h3><span>Phase One</span></h3>
+          <p>Clarify current state and target</p>
         </div>
         """
 
-        self.assertEqual(extract_tag_inside_block(html, "card card-danger", "h2"), "01 关键风险")
-        self.assertEqual(extract_list_items_from_block(html, "card card-danger"), ["风险一：说明", "风险二"])
-        self.assertEqual(extract_steps(html), [("阶段一", "梳理现状与目标")])
+        self.assertEqual(extract_tag_inside_block(html, "card card-danger", "h2"), "01 Key Risk")
+        self.assertEqual(extract_list_items_from_block(html, "card card-danger"), ["Risk One: description", "Risk Two"])
+        self.assertEqual(extract_steps(html), [("Phase One", "Clarify current state and target")])

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from .config import (
     DEFAULT_HTML,
-    DEFAULT_HTML_BODY_CHAPTERS,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_PREFIX,
     DEFAULT_REFERENCE_BODY,
@@ -81,8 +80,8 @@ def main():
     parser.add_argument("--llm-model", default="", help="Optional model override for the AI planner.")
     parser.add_argument("--planner-command", default="", help="Optional external planner command. Reads JSON from stdin and must print JSON to stdout.")
     parser.add_argument("--plan-output", default="", help="Optional output path for the generated DeckSpec JSON.")
-    parser.add_argument("--min-slides", type=int, default=0, help=f"Optional AI planner lower bound for body pages (1-{MAX_BODY_CHAPTERS}).")
-    parser.add_argument("--max-slides", type=int, default=0, help=f"Optional AI planner upper bound for body pages (1-{MAX_BODY_CHAPTERS}).")
+    parser.add_argument("--min-slides", type=int, default=None, help=f"Optional AI planner lower bound for body pages (1-{MAX_BODY_CHAPTERS}).")
+    parser.add_argument("--max-slides", type=int, default=None, help=f"Optional AI planner upper bound for body pages (1-{MAX_BODY_CHAPTERS}).")
     parser.add_argument(
         "--reference-body",
         default=str(DEFAULT_REFERENCE_BODY),
@@ -90,7 +89,12 @@ def main():
     )
     parser.add_argument("--output-name", default=DEFAULT_OUTPUT_PREFIX, help="Output filename prefix.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for generated artifacts.")
-    parser.add_argument("--chapters", type=int, default=0, help=f"Exact number of body chapters to generate (1-{MAX_BODY_CHAPTERS}).")
+    parser.add_argument(
+        "--chapters",
+        type=int,
+        default=None,
+        help=f"Optional exact number of body chapters to generate (1-{MAX_BODY_CHAPTERS}). If omitted, HTML <slide> input uses all detected pages.",
+    )
     parser.add_argument("--active-start", type=int, default=0, help="Directory active chapter start index (0-based).")
     args = parser.parse_args()
     validate_slide_args(args, parser)
@@ -101,7 +105,7 @@ def main():
     reference_body_path = Path(args.reference_body) if args.reference_body else None
     brief_text = load_brief_text(args.brief, args.brief_file)
     planner_command = resolve_external_planner_command(args.planner_command)
-    html_chapters = args.chapters or DEFAULT_HTML_BODY_CHAPTERS
+    html_chapters = args.chapters
 
     if args.command == "plan":
         deck_plan = plan_deck_from_html(html_path, html_chapters)

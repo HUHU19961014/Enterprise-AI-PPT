@@ -1,70 +1,94 @@
-# HTML 输入规范
+# HTML Input Spec
 
-这个项目当前不是“任意 HTML 都能转 PPT”，而是识别一组约定好的 class。只要你按下面结构组织内容，生成器就能稳定工作。
+The HTML input path now supports two compatible modes:
 
-## 最小可用输入
+1. Legacy structured blocks built from `phase-*`, `scenario`, and `note`
+2. Explicit slide pages built from `<slide data-pattern="...">`
 
-至少需要满足下面任一条件：
+If both are present, the planner prioritizes `<slide>` pages.
 
-- 提供一组 `phase-*`
-- 或提供至少一个 `scenario`
-- 或提供至少一个 `note`
+## Recommended `<slide>` format
 
-如果三类正文内容都没有，程序会直接报错。
+```html
+<div class="title">Supply Chain Compliance Program</div>
+<div class="subtitle">Executive update for steering committee</div>
 
-## 字段说明
+<slide data-pattern="general_business">
+  <h2>Global regulation trend</h2>
+  <ul>
+    <li>GDPR and cross-border data controls</li>
+    <li>Supply-chain due diligence requirements</li>
+  </ul>
+</slide>
 
-### 1. 基础字段
+<slide data-pattern="process_flow">
+  <h2>Implementation roadmap</h2>
+  <p class="subtitle">Four coordinated steps</p>
+  <ul>
+    <li>Assess</li>
+    <li>Design</li>
+    <li>Launch</li>
+    <li>Operate</li>
+  </ul>
+</slide>
+
+<slide data-pattern="solution_architecture">
+  <h2>Target architecture</h2>
+  <p>Data layer</p>
+  <p>Application layer</p>
+  <p>Governance layer</p>
+</slide>
+
+<div class="footer">Thanks</div>
+```
+
+Rules:
+
+- Each `<slide>` becomes one body page.
+- `data-pattern` is optional. If omitted, the planner infers a suitable pattern.
+- Supported native render patterns include:
+  - `general_business`
+  - `process_flow`
+  - `solution_architecture`
+  - `org_governance`
+  - `comparison_upgrade`
+  - `capability_ring`
+  - `five_phase_path`
+  - `pain_cards`
+- Slide content can come from either:
+  - `<ul><li>...</li></ul>`
+  - plain `<p>` / `<div>` text inside the slide
+
+## Legacy block format
+
+Legacy input is still supported for backward compatibility.
+
+Minimum usable content:
+
+- at least one `phase-*` group, or
+- at least one `scenario`, or
+- at least one `note`
+
+Important fields:
 
 - `title`
-  - 用途：主题页标题、正文第一页标题。
-  - 是否必填：否。
-  - 默认值：`项目概览与UAT阶段计划`
-
+  - used for the cover and the first page title
 - `subtitle`
-  - 用途：正文第一页副标题。
-  - 是否必填：否。
-  - 默认值：自动补一条说明文字。
-
+  - used for the first page subtitle
 - `footer`
-  - 用途：第三页副标题或补充说明。
-  - 是否必填：否。
-
-### 2. 阶段字段
-
-这五个字段建议成组出现，按顺序一一对应：
-
+  - used as supporting text on the focus/governance page
 - `phase-time`
 - `phase-name`
 - `phase-code`
 - `phase-func`
 - `phase-owner`
-
-用途：
-
-- 自动生成“项目概览与UAT阶段计划”页的四个卡片。
-
-规则：
-
-- 最多取前 4 组。
-- 如果字段数量不一致，生成器会按已有内容尽量拼装，不会因为单个字段缺失而直接报错。
-
-### 3. 场景字段
-
 - `scenario`
-  - 用途：生成“测试范围与关键场景”页。
-  - 最多取前 4 条。
-
-### 4. 关注点字段
-
 - `note`
-  - 用途：生成“测试关注点与验收标准”页。
-  - 最多取前 4 条。
 
-## 推荐 HTML 结构
+Example:
 
 ```html
-<div class="title">项目概览与UAT阶段计划</div>
+<div class="title">项目概览与 UAT 阶段规划</div>
 <div class="subtitle">按阶段推进测试执行，验证核心链路并明确责任边界。</div>
 
 <div class="phase-time">4/7-4/8</div>
@@ -79,43 +103,20 @@
 <div class="note">配置是否支持业务快速启动，并可定位异常。</div>
 <div class="note">数据与文件链路是否可追溯，关键节点可回放。</div>
 
-<div class="footer">验证目标：确保追溯链路在真实业务场景下可以稳定运行并形成闭环。</div>
+<div class="footer">验证目标：确保追溯链路在真实业务场景下稳定运行并形成闭环。</div>
 ```
 
-完整样例可参考：
+## Page-count behavior
 
-[`input/uat_plan_sample.html`](../input/uat_plan_sample.html)
+- `plan` / `make` no longer force HTML input down to three body pages.
+- If `--chapters` is omitted:
+  - legacy HTML keeps all detected legacy sections, up to what the planner can derive
+  - `<slide>` HTML keeps all detected slide tags
+- If `--chapters N` is provided, the planner caps body pages at `N`.
+- The bundled default template currently ships with a 20-pair preallocated slide pool.
 
-项目当前还提供了多份回归样例，便于每次改完逻辑后批量验证：
+## Notes
 
-- [`input/uat_plan_sample.html`](../input/uat_plan_sample.html)
-- [`input/architecture_program_sample.html`](../input/architecture_program_sample.html)
-- [`input/vendor_launch_sample.html`](../input/vendor_launch_sample.html)
-- [`input/invalid_empty.fail.html`](../input/invalid_empty.fail.html)
-
-其中 `*.fail.html` 表示“预期失败样例”，用于验证输入校验是否仍然生效。
-
-## 当前页面映射规则
-
-- 第 1 个正文页：
-  - 标题来自 `title`
-  - 副标题来自 `subtitle`
-  - 卡片内容优先来自 `phase-*`
-
-- 第 2 个正文页：
-  - 标题固定为“测试范围与关键场景”
-  - 内容来自 `scenario`
-
-- 第 3 个正文页：
-  - 标题固定为“测试关注点与验收标准”
-  - 内容来自 `note`
-  - 如果有 `footer`，会优先作为补充说明使用
-
-## 当前不支持的情况
-
-- 任意复杂嵌套 HTML 的精准版式还原
-- 图片、表格、图表自动识别
-- 超过 3 类正文页的动态扩页
-- 任意 class 自动推断业务含义
-
-如果后面要扩展输入类型，建议先更新这份文档，再改生成逻辑。
+- The directory slide shows a rolling five-item window when the deck has more than five body pages.
+- Legacy input remains useful for old samples in `input/`.
+- For richer layouts, prefer explicit `<slide data-pattern>` input.

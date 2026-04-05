@@ -11,6 +11,7 @@ from .body_renderers import apply_theme_title, fill_body_slide, fill_directory_s
 from .config import DEFAULT_MIN_TEMPLATE_SLIDES, DEFAULT_OUTPUT_DIR
 from .models import BodyPageSpec, DeckPlan, DeckRenderTrace, GenerationArtifacts, PageRenderTrace
 from .pipeline import plan_deck_from_html, plan_deck_from_json
+from .planning.deck_planner import build_directory_window
 from .reference_styles import build_reference_import_plan, populate_reference_body_pages
 from .slide_ops import (
     clone_slide_after,
@@ -35,6 +36,10 @@ def build_output_path(output_dir: Path, output_prefix: str) -> Path:
     return output_dir / f"{safe_prefix}_{timestamp}.pptx"
 
 
+def _directory_lines_for_page(body_pages: list[BodyPageSpec], active_index: int) -> tuple[list[str], int]:
+    return build_directory_window(body_pages, active_index)
+
+
 def validate_slide_pool_configuration(manifest: TemplateManifest, body_page_count: int, slide_count: int):
     if not manifest.slide_pools:
         return
@@ -47,7 +52,10 @@ def validate_slide_pool_configuration(manifest: TemplateManifest, body_page_coun
         raise ValueError("Template manifest slide pool is invalid: ending slide is not configured.")
     if len(directory_pool) < body_page_count or len(body_pool) < body_page_count:
         raise ValueError(
-            "Template manifest slide pool is invalid: not enough preallocated directory/body slides for the requested deck."
+            "Template manifest slide pool is too small for this deck: "
+            f"requested {body_page_count} body pages, "
+            f"but only {min(len(directory_pool), len(body_pool))} preallocated pairs are configured in "
+            f"{manifest.manifest_path}."
         )
 
     used_indices = directory_pool[:body_page_count] + body_pool[:body_page_count] + [manifest.slide_pools.ending]
@@ -150,7 +158,8 @@ def _render_with_preallocated_pool(
     body_slides = [prs.slides[index] for index in used_body_indices]
 
     for chapter_idx, directory_slide in enumerate(directory_slides):
-        fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx, manifest)
+        window_lines, window_active_index = _directory_lines_for_page(body_pages, active_start + chapter_idx)
+        fill_directory_slide(directory_slide, window_lines, window_active_index, manifest)
     for page, body_slide in zip(body_pages, body_slides):
         fill_body_slide(body_slide, page, manifest)
 
@@ -178,14 +187,15 @@ def _render_with_legacy_clone(
         insert_after += 1
 
     for chapter_idx, directory_slide in enumerate(directory_slides):
-        fill_directory_slide(directory_slide, chapter_lines, active_start + chapter_idx, manifest)
+        window_lines, window_active_index = _directory_lines_for_page(body_pages, active_start + chapter_idx)
+        fill_directory_slide(directory_slide, window_lines, window_active_index, manifest)
     for page, body_slide in zip(body_pages, body_slides):
         fill_body_slide(body_slide, page, manifest)
 
 
 def _refresh_legacy_directory_clones(
     pptx_path: Path,
-    chapter_lines: list[str],
+    body_pages: list[BodyPageSpec],
     active_start: int,
     body_page_count: int,
     manifest: TemplateManifest,
@@ -202,11 +212,13 @@ def _refresh_legacy_directory_clones(
             continue
 
         prs_reloaded = Presentation(str(pptx_path))
-        fill_directory_slide(prs_reloaded.slides[directory_idx], chapter_lines, active_start, manifest)
+        window_lines, window_active_index = _directory_lines_for_page(body_pages, active_start)
+        fill_directory_slide(prs_reloaded.slides[directory_idx], window_lines, window_active_index, manifest)
         for offset, directory_slide_no in enumerate(targets, start=1):
             slide_index = directory_slide_no - 1
             if slide_index < len(prs_reloaded.slides):
-                fill_directory_slide(prs_reloaded.slides[slide_index], chapter_lines, active_start + offset, manifest)
+                window_lines, window_active_index = _directory_lines_for_page(body_pages, active_start + offset)
+                fill_directory_slide(prs_reloaded.slides[slide_index], window_lines, window_active_index, manifest)
         prs_reloaded.save(str(pptx_path))
         prs_reloaded = None
         gc.collect()
@@ -307,7 +319,7 @@ def _generate_ppt_from_plan(
         )
 
     if not used_preallocated_pool:
-        _refresh_legacy_directory_clones(out, chapter_lines, active_start, len(body_pages), manifest)
+        _refresh_legacy_directory_clones(out, body_pages, active_start, len(body_pages), manifest)
 
     render_trace = DeckRenderTrace(
         input_kind=input_kind,
@@ -328,7 +340,7 @@ def generate_ppt_artifacts_from_html(
     html_path: Path,
     reference_body_path: Path | None,
     output_prefix: str,
-    chapters: int,
+    chapters: int | None,
     active_start: int,
     output_dir: Path | None = None,
 ) -> GenerationArtifacts:
@@ -393,7 +405,7 @@ def generate_ppt(
     html_path: Path,
     reference_body_path: Path | None,
     output_prefix: str,
-    chapters: int,
+    chapters: int | None,
     active_start: int,
     output_dir: Path | None = None,
 ):

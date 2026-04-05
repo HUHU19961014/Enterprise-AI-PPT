@@ -26,14 +26,23 @@ def _is_ending_slide(slide) -> bool:
     return any(keyword in text for keyword in ("thanks", "thank you", "q&a", "谢谢", "感谢"))
 
 
-def _is_directory_slide(slide, chapter_lines: list[str]) -> bool:
+def _is_directory_slide(slide, chapter_lines: list[str], manifest: TemplateManifest | None = None) -> bool:
+    if manifest is not None:
+        title_boxes = [
+            shape
+            for shape in slide.shapes
+            if getattr(shape, "has_text_frame", False)
+            and manifest.selectors.directory_title.matches(shape)
+        ]
+        required_count = min(len(chapter_lines) or 1, 5)
+        if len(title_boxes) >= required_count:
+            return True
+
     text = _slide_text(slide)
     if not text:
         return False
     lowered = text.lower()
-    if "目录" in text or "content" in lowered:
-        return True
-    return False
+    return "目录" in text or "content" in lowered
 
 
 def _iter_text_run_sizes(shape) -> list[float]:
@@ -54,8 +63,7 @@ def _theme_title_font_ok(prs: Presentation, manifest: TemplateManifest) -> bool:
     candidates = [
         shape
         for shape in slide.shapes
-        if getattr(shape, "has_text_frame", False)
-        and manifest.selectors.theme_title.matches(shape)
+        if getattr(shape, "has_text_frame", False) and manifest.selectors.theme_title.matches(shape)
     ]
     if not candidates:
         return False
@@ -81,8 +89,8 @@ def _directory_title_font_ok(
             if getattr(shape, "has_text_frame", False)
             and manifest.selectors.directory_title.matches(shape)
         ]
-        title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))[: len(chapter_lines)]
-        if len(title_boxes) < len(chapter_lines):
+        title_boxes = sorted(title_boxes, key=lambda shape: (shape.top, shape.left))[: min(len(chapter_lines), 5)]
+        if len(title_boxes) < min(len(chapter_lines), 5):
             return False
         for shape in title_boxes:
             sizes = _iter_text_run_sizes(shape)
@@ -149,7 +157,18 @@ def build_qa_result(
         expected_dirs = [index + 1 for index in manifest.slide_pools.directory[:chapter_count]]
     else:
         expected_dirs = [manifest.slide_roles.directory + 1 + i * 2 for i in range(chapter_count)]
-    actual_dirs = [i for i, slide in enumerate(prs.slides, start=1) if _is_directory_slide(slide, chapter_lines)]
+    if expected_dirs and all(
+        slide_no <= len(prs.slides)
+        and _is_directory_slide(prs.slides[slide_no - 1], chapter_lines, manifest=manifest)
+        for slide_no in expected_dirs
+    ):
+        actual_dirs = expected_dirs
+    else:
+        actual_dirs = [
+            i
+            for i, slide in enumerate(prs.slides, start=1)
+            if _is_directory_slide(slide, chapter_lines, manifest=manifest)
+        ]
     overflow_risk = _overflow_risk_boxes(prs)
 
     return QaResult(

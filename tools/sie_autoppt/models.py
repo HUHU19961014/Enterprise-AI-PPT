@@ -111,6 +111,14 @@ BodyPagePayload: TypeAlias = (
 
 
 @dataclass(frozen=True)
+class HtmlSlide:
+    title: str
+    subtitle: str
+    bullets: list[str]
+    pattern_id: str = ""
+
+
+@dataclass(frozen=True)
 class InputPayload:
     title: str
     subtitle: str
@@ -122,6 +130,7 @@ class InputPayload:
     phases: list[dict[str, str]]
     scenarios: list[str]
     notes: list[str]
+    slides: list[HtmlSlide] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

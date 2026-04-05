@@ -2,7 +2,7 @@ import re
 
 from bs4 import BeautifulSoup, Tag
 
-from ..models import InputPayload
+from ..models import HtmlSlide, InputPayload
 
 
 def _soup(html: str) -> BeautifulSoup:
@@ -11,11 +11,6 @@ def _soup(html: str) -> BeautifulSoup:
 
 def _class_tokens(class_pattern: str) -> list[str]:
     return [token.strip() for token in class_pattern.split() if token.strip()]
-
-
-def _has_all_classes(tag: Tag, class_pattern: str) -> bool:
-    classes = set(tag.get("class", []))
-    return all(token in classes for token in _class_tokens(class_pattern))
 
 
 def _find_first_by_classes(root: Tag | BeautifulSoup, class_pattern: str) -> Tag | None:
@@ -33,8 +28,8 @@ def _tag_text(node: Tag | None) -> str:
     if node is None:
         return ""
     text = " ".join(node.get_text(" ", strip=True).split())
-    text = re.sub(r"\s+([:：;；,.，。!?！？])", r"\1", text)
-    text = re.sub(r"([(/（【])\s+", r"\1", text)
+    text = re.sub(r"\s+([:：,.，。!?？；;])", r"\1", text)
+    text = re.sub(r"([(/（])\s+", r"\1", text)
     return text.strip()
 
 
@@ -113,6 +108,50 @@ def extract_phases(html: str) -> list[dict[str, str]]:
     return phases
 
 
+def _extract_slide_bullets(slide_node: Tag) -> list[str]:
+    bullets = [_tag_text(item) for item in slide_node.find_all("li")]
+    if bullets:
+        return [item for item in bullets if item]
+
+    paragraphs = []
+    for node in slide_node.find_all(["p", "div"]):
+        if node.find_parent(["ul", "ol"]) is not None:
+            continue
+        if "subtitle" in set(node.get("class", [])):
+            continue
+        text = _tag_text(node)
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
+def extract_slides(html: str) -> list[HtmlSlide]:
+    slides = []
+    for index, slide_node in enumerate(_soup(html).find_all("slide"), start=1):
+        title_node = slide_node.find(["h1", "h2", "h3"])
+        subtitle_node = slide_node.find(
+            lambda node: isinstance(node, Tag) and "subtitle" in set(node.get("class", []))
+        )
+        title = clean_heading_text(_tag_text(title_node))
+        subtitle = _tag_text(subtitle_node)
+        bullets = _extract_slide_bullets(slide_node)
+        if title_node is not None and title in bullets:
+            bullets = [item for item in bullets if item != title]
+        if subtitle and subtitle in bullets:
+            bullets = [item for item in bullets if item != subtitle]
+
+        if title or subtitle or bullets:
+            slides.append(
+                HtmlSlide(
+                    title=title or f"Page {index}",
+                    subtitle=subtitle,
+                    bullets=bullets,
+                    pattern_id=str(slide_node.get("data-pattern", "")).strip(),
+                )
+            )
+    return slides
+
+
 def parse_html_payload(html: str) -> InputPayload:
     return InputPayload(
         title=extract_single(html, "title"),
@@ -125,6 +164,7 @@ def parse_html_payload(html: str) -> InputPayload:
         phases=extract_phases(html),
         scenarios=extract_list(html, "scenario"),
         notes=extract_list(html, "note"),
+        slides=extract_slides(html),
     )
 
 
@@ -137,14 +177,15 @@ def validate_payload(payload: InputPayload):
             payload.phases,
             payload.scenarios,
             payload.notes,
+            payload.slides,
         ]
     )
     if not has_meaningful_content:
         raise ValueError(
-            "杈撳叆 HTML 鏈瘑鍒埌鍙敤鍐呭銆傝鑷冲皯鎻愪緵 title銆乻ubtitle銆乸hase-*銆乻cenario銆乶ote銆乫ooter 涓殑涓€閮ㄥ垎銆?"
+            "Input HTML is empty. Please provide at least one of: title, subtitle, footer, phase-*, scenario, note, or <slide>."
         )
 
-    if not payload.phases and not payload.scenarios and not payload.notes:
+    if not payload.slides and not payload.phases and not payload.scenarios and not payload.notes:
         raise ValueError(
-            "杈撳叆 HTML 缂哄皯姝ｆ枃鍐呭銆傝鑷冲皯琛ュ厖涓€缁?phase-*銆乻cenario 鎴?note锛屾墠鑳界敓鎴愭湁鎰忎箟鐨勬鏂囬〉銆?"
+            "Input HTML has no body content. Please provide <slide> tags or at least one phase-*, scenario, or note block."
         )

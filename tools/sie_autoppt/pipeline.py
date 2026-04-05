@@ -14,7 +14,7 @@ def build_deck_plan(deck) -> DeckPlan:
     )
 
 
-def plan_deck_from_html(html_path: Path, chapters: int) -> DeckPlan:
+def plan_deck_from_html(html_path: Path, chapters: int | None = None) -> DeckPlan:
     html = html_path.read_text(encoding="utf-8")
     deck = build_deck_spec_from_html(html, chapters)
     return build_deck_plan(deck)

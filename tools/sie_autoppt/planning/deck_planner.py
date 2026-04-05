@@ -11,25 +11,22 @@ from ..inputs.html_parser import (
     parse_html_payload,
     validate_payload,
 )
-from ..models import (
-    BodyPageSpec,
-    BodyPagePayload,
-    DeckSpec,
-    InputPayload,
-)
+from ..models import BodyPagePayload, BodyPageSpec, DeckSpec, HtmlSlide, InputPayload
 from ..patterns import infer_pattern
 
 
-DEFAULT_TITLE = "项目概览与UAT阶段计划"
-DEFAULT_SUBTITLE = "根据输入 HTML 自动归纳测试章节与核心要点。"
-DEFAULT_SCOPE_TITLE = "测试范围与关键场景"
-DEFAULT_SCOPE_SUBTITLE = "根据输入场景自动归纳测试覆盖范围。"
-DEFAULT_FOCUS_TITLE = "测试关注点与验收标准"
-DEFAULT_FOCUS_SUBTITLE = "根据输入关注点自动生成验收提示。"
-DEFAULT_SUMMARY_TITLE = "总结与行动"
+DEFAULT_TITLE = "项目概览与阶段规划"
+DEFAULT_SUBTITLE = "根据输入内容自动归纳重点，生成结构化业务汇报。"
+DEFAULT_SCOPE_TITLE = "范围与关键场景"
+DEFAULT_SCOPE_SUBTITLE = "根据输入场景自动归纳覆盖范围。"
+DEFAULT_FOCUS_TITLE = "重点事项与验收标准"
+DEFAULT_FOCUS_SUBTITLE = "根据输入要点自动生成关注事项。"
+DEFAULT_SUMMARY_TITLE = "总结"
 DEFAULT_EMPTY_OVERVIEW = "补充 phase-* 内容后，可自动生成项目概览页。"
-DEFAULT_EMPTY_SCOPE = "补充 scenario 内容后，可自动生成测试范围与关键场景页。"
-DEFAULT_EMPTY_FOCUS = "补充 note 或 footer 内容后，可自动生成测试关注点与验收标准页。"
+DEFAULT_EMPTY_SCOPE = "补充 scenario 内容后，可自动生成场景分析页。"
+DEFAULT_EMPTY_FOCUS = "补充 note 或 footer 内容后，可自动生成重点事项页。"
+DEFAULT_GOVERNANCE_LABEL = "重点"
+DIRECTORY_WINDOW_SIZE = 5
 
 
 def build_overview_bullets(payload: InputPayload) -> list[str]:
@@ -57,21 +54,23 @@ def build_focus_bullets(payload: InputPayload) -> list[str]:
 
 
 def clamp_requested_chapters(chapters: int | None, available_pages: int) -> int:
-    requested = 1 if chapters is None else int(chapters)
+    requested = available_pages if chapters is None else int(chapters)
+    if requested <= 0:
+        requested = available_pages
     return max(1, min(requested, MAX_BODY_CHAPTERS, available_pages))
 
 
 def format_phase_summary(phase: dict[str, str]) -> str:
-    prefix = phase["name"]
-    if phase["time"]:
-        prefix = f"{prefix}（{phase['time']}）" if prefix else phase["time"]
-    detail = phase["func"] or phase["code"] or phase["owner"]
-    return f"{prefix}：{detail}".strip("：")
+    prefix = phase.get("name", "")
+    if phase.get("time"):
+        prefix = f"{prefix} ({phase['time']})" if prefix else phase["time"]
+    detail = phase.get("func") or phase.get("code") or phase.get("owner") or ""
+    return f"{prefix}: {detail}".strip(": ").strip()
 
 
 def split_title_detail(text: str) -> tuple[str, str]:
     normalized = re.sub(r"\s+", " ", text).strip()
-    for sep in ("：", ":"):
+    for sep in ("：", ":", " - ", " | "):
         if sep in normalized:
             title, detail = normalized.split(sep, 1)
             return title.strip(), detail.strip()
@@ -82,16 +81,19 @@ def compact_text(text: str, max_chars: int) -> str:
     compact = re.sub(r"\s+", " ", text).strip()
     if len(compact) <= max_chars:
         return compact
-    return compact[: max_chars - 1].rstrip(" ,;，；。)") + "…"
+    return compact[: max_chars - 1].rstrip(" ,;，；。") + "…"
 
 
 def concise_text(text: str, max_chars: int) -> str:
-    parts = [part.strip() for part in re.split(r"[。；;，]", re.sub(r"\s+", " ", text)) if part.strip()]
+    compact = re.sub(r"\s+", " ", text).strip()
+    if len(compact) <= max_chars:
+        return compact
+    parts = [part.strip() for part in re.split(r"[。；;!?？!]", compact) if part.strip()]
     if not parts:
-        return compact_text(text, max_chars)
+        return compact_text(compact, max_chars)
     candidate = parts[0]
     if len(parts) > 1 and len(candidate) + len(parts[1]) + 1 <= max_chars:
-        candidate = f"{candidate}，{parts[1]}"
+        candidate = f"{candidate}；{parts[1]}"
     return compact_text(candidate, max_chars)
 
 
@@ -99,24 +101,13 @@ def short_stage_label(text: str, max_chars: int = 8) -> str:
     compact = re.sub(r"\s+", "", text)
     compact = re.sub(r"\(.*?\)", "", compact)
     compact = re.sub(r"（.*?）", "", compact)
-    compact = compact.replace("最佳实践", "").replace("工业化流水线", "流水线")
-    if len(compact) <= max_chars:
-        return compact
-    return compact[:max_chars]
+    return compact[:max_chars] if len(compact) > max_chars else compact
 
 
 def shorten_for_nav(text: str, max_chars: int = 10) -> str:
     compact = re.sub(r"\s+", "", text)
-    compact = re.sub(r"（.*?）", "", compact)
-    compact = compact.replace("(最佳实践)", "").replace("(V3.0战略视图)", "")
-    compact = compact.replace("（", "").replace("）", "").replace("?", "")
-    if len(compact) <= max_chars:
-        return compact
-    if "与" in compact:
-        candidate = "与".join(compact.split("与")[:2])
-        if len(candidate) <= max_chars:
-            return candidate
-    return compact[:max_chars]
+    compact = compact.replace("（", "").replace("）", "").replace("(", "").replace(")", "")
+    return compact[:max_chars] if len(compact) > max_chars else compact
 
 
 def derive_comparison_cards(raw_items: list[str], fallback_title: str, synthetic_tail: tuple[str, str]) -> list[dict[str, str]]:
@@ -126,16 +117,11 @@ def derive_comparison_cards(raw_items: list[str], fallback_title: str, synthetic
         cards.append(
             {
                 "title": compact_text(title or fallback_title, 14),
-                "detail": concise_text(detail or title, 34),
+                "detail": concise_text(detail or title or fallback_title, 34),
             }
         )
     while len(cards) < 3:
-        cards.append(
-            {
-                "title": fallback_title,
-                "detail": concise_text(fallback_title, 34),
-            }
-        )
+        cards.append({"title": fallback_title, "detail": concise_text(fallback_title, 34)})
     cards = cards[:3]
     cards.append({"title": compact_text(synthetic_tail[0], 14), "detail": concise_text(synthetic_tail[1], 34)})
     return cards
@@ -144,8 +130,8 @@ def derive_comparison_cards(raw_items: list[str], fallback_title: str, synthetic
 def build_architecture_layers(payload: InputPayload) -> list[dict[str, str]]:
     layers = []
     for index, phase in enumerate(payload.phases[:4], start=1):
-        title = compact_text(phase["name"] or f"Layer {index}", 18)
-        detail = concise_text(phase["func"] or phase["code"] or phase["owner"] or title, 54)
+        title = compact_text(phase.get("name") or f"Layer {index}", 18)
+        detail = concise_text(phase.get("func") or phase.get("code") or phase.get("owner") or title, 54)
         layers.append({"label": f"L{index:02d}", "title": title, "detail": detail})
     return layers
 
@@ -166,32 +152,32 @@ def build_governance_cards(items: list[str]) -> list[dict[str, str]]:
         title, detail = split_title_detail(item)
         label_source = title
         if title == detail:
-            first_clause = re.split(r"[，、；。,\s]", title, maxsplit=1)[0].strip()
+            first_clause = re.split(r"[，、；。\s]", title, maxsplit=1)[0].strip()
             label_source = first_clause or title
-        label = compact_text(label_source or f"重点{index}", 8)
+        label = compact_text(label_source or f"{DEFAULT_GOVERNANCE_LABEL}{index}", 8)
         cards.append({"label": label, "detail": concise_text(detail or title or label, 40)})
     return cards
 
 
+def resolve_requested_pattern(pattern_id: str, title: str, bullets: list[str]) -> str:
+    return pattern_id or infer_pattern(title, bullets)
+
+
 def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: InputPayload) -> BodyPagePayload:
+    page_items = page.bullets if page.page_key.startswith("slide_") else []
     if pattern_id == "solution_architecture":
-        layers = build_architecture_layers(payload)
+        layers = [] if page_items else build_architecture_layers(payload)
         if layers:
-            return {
-                "layers": layers,
-                "banner_text": compact_text(page.title, 16),
-            }
+            return {"layers": layers, "banner_text": compact_text(page.title, 16)}
         return {}
     if pattern_id == "process_flow":
-        steps = build_process_steps(payload.scenarios or page.bullets)
-        return {"steps": steps}
+        return {"steps": build_process_steps(page_items or payload.scenarios or page.bullets)}
     if pattern_id == "org_governance":
-        cards = build_governance_cards(payload.notes or page.bullets)
         payload_data: dict[str, object] = {
-            "cards": cards,
-            "label_prefix": "重点",
+            "cards": build_governance_cards(page_items or payload.notes or page.bullets),
+            "label_prefix": DEFAULT_GOVERNANCE_LABEL,
         }
-        if payload.footer:
+        if payload.footer and not page_items:
             payload_data["footer_text"] = concise_text(payload.footer, 72)
         return payload_data
     return {}
@@ -205,41 +191,40 @@ def build_principle_items(success_bullets: list[str], steps: list[tuple[str, str
     for title, detail in steps[:4]:
         items.append({"title": compact_text(short_stage_label(title, 10), 14), "detail": concise_text(detail, 28)})
     while len(items) < 7:
-        items.append({"title": "协同交付", "detail": concise_text(conclusion or "保持模板骨架稳定，给 AI 留出创作空间。", 28)})
+        items.append({"title": "协同交付", "detail": concise_text(conclusion or "固定结构，释放 AI 的内容创作空间。", 28)})
     return items[:7]
 
 
 def build_pipeline_payload(steps: list[tuple[str, str]], conclusion: str, subtitle: str) -> dict[str, object]:
     default_stages = [
-        ("阶段一\n业务抽象", ["梳理业务逻辑", "提炼关键信息", "统一输入结构", "输出标准数据", "明确渲染边界"]),
-        ("阶段二\n组件沉淀", ["抽取复用组件", "沉淀原子函数", "约束版式规则", "绑定模板元素", "控制样式参数"]),
-        ("阶段三\n自动渲染", ["批量生成页面", "写入目录导航", "完成基础 QA"]),
-        ("阶段四\n人工抛光", ["分组与对齐", "视觉微调", "检查遮挡溢出", "补充动画过渡", "形成交付底稿"]),
-        ("阶段五\n价值兑现", ["沉淀最佳实践", "回灌模板库", "效率与质量兼得", "形成稳定交付闭环"]),
+        ("阶段1\n业务抽象", ["梳理业务逻辑", "提炼关键信息", "统一输入结构", "输出标准数据", "明确渲染边界"]),
+        ("阶段2\n组件沉淀", ["抽取复用组件", "沉淀原子能力", "约束版式规则", "绑定模板元素", "控制样式参数"]),
+        ("阶段3\n自动渲染", ["批量生成页面", "写入目录导航", "完成基础 QA"]),
+        ("阶段4\n人工抛光", ["分组与对齐", "视觉微调", "检查遮挡溢出", "补充动画过渡", "形成交付底稿"]),
+        ("阶段5\n价值兑现", ["沉淀最佳实践", "回灌模板库", "兼顾效率与质量", "形成稳定交付闭环"]),
     ]
+
     stage_headers = []
     stage_tasks = []
     for index, (title, detail) in enumerate(steps[:4], start=1):
         stage_headers.append(f"阶段{index}\n{short_stage_label(title)}")
-        sentence_parts = [part.strip() for part in re.split(r"[。；;，]", detail) if part.strip()]
+        sentence_parts = [part.strip() for part in re.split(r"[。；;!?？!]", detail) if part.strip()]
         tasks = [compact_text(part, 14) for part in sentence_parts[:5]]
         while len(tasks) < len(default_stages[index - 1][1]):
             tasks.append(default_stages[index - 1][1][len(tasks)])
         stage_tasks.append(tasks[: len(default_stages[index - 1][1])])
+
     while len(stage_headers) < 4:
         title, tasks = default_stages[len(stage_headers)]
         stage_headers.append(title)
         stage_tasks.append(tasks)
-    stage_headers.append("阶段五\n价值兑现")
-    stage_tasks.append(default_stages[4][1])
 
-    stages = []
-    for header, tasks in zip(stage_headers[:5], stage_tasks[:5]):
-        stages.append({"header": header, "tasks": tasks})
+    stage_headers.append(default_stages[4][0])
+    stage_tasks.append(default_stages[4][1])
 
     return {
         "intro": conclusion or subtitle,
-        "stages": stages,
+        "stages": [{"header": header, "tasks": tasks} for header, tasks in zip(stage_headers[:5], stage_tasks[:5])],
         "legend": ["AI", "Python", "模板", "设计"],
     }
 
@@ -255,7 +240,7 @@ def choose_page_pattern(page_key: str, title: str, subtitle: str, bullets: list[
     return infer_pattern(title, bullets)
 
 
-def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
+def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec | None:
     if "comparison-grid" not in html or "pipeline-section" not in html:
         return None
 
@@ -272,42 +257,40 @@ def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
     if not any([cover_title, subtitle, danger_bullets, success_bullets, steps, conclusion]):
         return None
 
-    danger_cards = derive_comparison_cards(
-        danger_bullets,
-        fallback_title="视觉风险",
-        synthetic_tail=("调试成本放大", "长链路对话会放大排错与回归成本。"),
-    )
-    success_cards = derive_comparison_cards(
-        success_bullets,
-        fallback_title="工程化解法",
-        synthetic_tail=("保留创作空间", conclusion or "固定骨架，让 AI 在内容与表达上创造增量价值。"),
-    )
-    principle_items = build_principle_items(success_bullets, steps, conclusion)
     comparison_payload = {
-        "headline": subtitle or "先识别能力边界，再设计工程化交付路径。",
-        "left_label": "● 一键生成式交付",
-        "right_label": "● 工程化协同交付",
-        "left_cards": danger_cards,
-        "right_cards": success_cards,
+        "headline": subtitle or DEFAULT_SUBTITLE,
+        "left_label": "一键生成式交付",
+        "right_label": "工程化协同交付",
+        "left_cards": derive_comparison_cards(
+            danger_bullets,
+            fallback_title="视觉风险",
+            synthetic_tail=("调试成本放大", "长链路对话会放大排错和回归成本。"),
+        ),
+        "right_cards": derive_comparison_cards(
+            success_bullets,
+            fallback_title="工程化方案",
+            synthetic_tail=("保留创作空间", conclusion or "固定骨架，让 AI 在内容与表达上创造增量价值。"),
+        ),
         "center_kicker": "ENGINEERING COPILOT",
         "center_title": "结构化内容交付中枢",
-        "center_subtitle": "内容引擎 · 模块化代码助手 · 人工视觉抛光",
+        "center_subtitle": "内容引擎 · 模块化代码助理 · 人工视觉抛光",
         "center_top_label": "协同原则层",
         "center_section_title": "人机协同 (Human in the Loop)",
         "center_row1_left": "结构化输入",
         "center_row1_right": "模板化渲染",
         "center_row2_left": "视觉 QA",
         "center_row2_right": "人工微调",
-        "center_divider": "★ 先守住骨架，再释放 AI 创作空间 ★",
+        "center_divider": "先守住骨架，再释放 AI 创作空间",
         "center_bottom_label": "交付结果层",
         "center_bottom_title": "高质量输出 (Deliverable)",
         "center_bottom_left": "稳定复用",
         "center_bottom_right": "风格一致",
-        "center_bottom_footer": "效率与质量兼得",
+        "center_bottom_footer": "兼顾效率与质量",
         "bottom_left_caption": "识别边界",
         "bottom_right_caption": "交付升级",
     }
 
+    principle_items = build_principle_items(success_bullets, steps, conclusion)
     page_specs = [
         BodyPageSpec(
             page_key="comparison_upgrade",
@@ -333,20 +316,50 @@ def build_card_analysis_page_specs(html: str, chapters: int) -> DeckSpec | None:
             page_key="delivery_pipeline",
             title=pipeline_title or "工业化流水线实施路径",
             subtitle=conclusion or DEFAULT_FOCUS_SUBTITLE,
-            bullets=[f"{step_title}：{step_desc}" for step_title, step_desc in steps[:4]] or [DEFAULT_EMPTY_FOCUS],
+            bullets=[f"{step_title}: {step_desc}" for step_title, step_desc in steps[:4]] or [DEFAULT_EMPTY_FOCUS],
             pattern_id="five_phase_path",
             nav_title=shorten_for_nav("实施路径"),
             reference_style_id="five_phase_path",
             payload=build_pipeline_payload(steps, conclusion, subtitle),
         ),
     ]
+
     return DeckSpec(
         cover_title=cover_title or DEFAULT_TITLE,
         body_pages=page_specs[: clamp_requested_chapters(chapters, len(page_specs))],
     )
 
 
-def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
+def build_slide_tag_page_specs(payload: InputPayload, chapters: int | None) -> DeckSpec:
+    page_specs = []
+    for index, slide in enumerate(payload.slides, start=1):
+        pattern_id = resolve_requested_pattern(slide.pattern_id, slide.title, slide.bullets)
+        page = BodyPageSpec(
+            page_key=f"slide_{index}",
+            title=slide.title,
+            subtitle=slide.subtitle,
+            bullets=slide.bullets,
+            pattern_id=pattern_id,
+            nav_title=shorten_for_nav(slide.title),
+        )
+        page_specs.append(
+            BodyPageSpec(
+                page_key=page.page_key,
+                title=page.title,
+                subtitle=page.subtitle,
+                bullets=page.bullets,
+                pattern_id=pattern_id,
+                nav_title=page.nav_title,
+                payload=build_generic_page_payload(page, pattern_id, payload),
+            )
+        )
+
+    requested_chapters = clamp_requested_chapters(chapters, len(page_specs))
+    cover_title = payload.title or (page_specs[0].title if page_specs else DEFAULT_TITLE)
+    return DeckSpec(cover_title=cover_title, body_pages=page_specs[:requested_chapters])
+
+
+def build_legacy_page_specs(payload: InputPayload, chapters: int | None) -> DeckSpec:
     requested_chapters = clamp_requested_chapters(chapters, 3)
     scope_title = payload.scope_title or DEFAULT_SCOPE_TITLE
     scope_subtitle = payload.scope_subtitle or DEFAULT_SCOPE_SUBTITLE
@@ -379,42 +392,61 @@ def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
         ),
     ][:requested_chapters]
 
-    return DeckSpec(
-        cover_title=payload.title or DEFAULT_TITLE,
-        body_pages=[
+    body_pages = []
+    for page in page_specs:
+        pattern_id = choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets)
+        body_pages.append(
             BodyPageSpec(
                 page_key=page.page_key,
                 title=page.title,
                 subtitle=page.subtitle,
                 bullets=page.bullets,
-                pattern_id=choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets),
+                pattern_id=pattern_id,
                 nav_title=page.nav_title or shorten_for_nav(page.title),
-                payload=build_generic_page_payload(
-                    page,
-                    choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets),
-                    payload,
-                ),
+                payload=build_generic_page_payload(page, pattern_id, payload),
             )
-            for page in page_specs
-        ],
-    )
+        )
+
+    return DeckSpec(cover_title=payload.title or DEFAULT_TITLE, body_pages=body_pages)
 
 
-def build_deck_spec_from_html(html: str, chapters: int) -> DeckSpec:
+def build_deck_spec_from_html(html: str, chapters: int | None) -> DeckSpec:
     specialized_deck = build_card_analysis_page_specs(html, chapters)
     if specialized_deck:
         return specialized_deck
+
     payload = parse_html_payload(html)
     validate_payload(payload)
-    return build_page_specs(payload, chapters)
+
+    if payload.slides:
+        return build_slide_tag_page_specs(payload, chapters)
+    return build_legacy_page_specs(payload, chapters)
 
 
 def build_directory_lines(body_pages: list[BodyPageSpec]) -> list[str]:
-    lines = [page.nav_title or page.title for page in body_pages[:5]]
+    lines = [page.nav_title or page.title for page in body_pages[:DIRECTORY_WINDOW_SIZE]]
     for fallback in (DEFAULT_SUMMARY_TITLE, "Q&A"):
-        if len(lines) >= 5:
+        if len(lines) >= DIRECTORY_WINDOW_SIZE:
             break
         lines.append(fallback)
-    while len(lines) < 5:
+    while len(lines) < DIRECTORY_WINDOW_SIZE:
         lines.append(f"章节{len(lines) + 1}")
-    return lines[:5]
+    return lines[:DIRECTORY_WINDOW_SIZE]
+
+
+def build_directory_window(body_pages: list[BodyPageSpec], active_index: int) -> tuple[list[str], int]:
+    if not body_pages:
+        lines = build_directory_lines([])
+        return lines, 0
+
+    labels = [page.nav_title or page.title for page in body_pages]
+    if len(labels) <= DIRECTORY_WINDOW_SIZE:
+        lines = build_directory_lines(body_pages)
+        safe_index = max(0, min(active_index, len(lines) - 1))
+        return lines, safe_index
+
+    safe_active = max(0, min(active_index, len(labels) - 1))
+    max_start = len(labels) - DIRECTORY_WINDOW_SIZE
+    start = min(max(safe_active - DIRECTORY_WINDOW_SIZE // 2, 0), max_start)
+    window = labels[start : start + DIRECTORY_WINDOW_SIZE]
+    return window, safe_active - start
