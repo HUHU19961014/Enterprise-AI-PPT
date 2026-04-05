@@ -2,10 +2,28 @@
 
 `SIE-autoppt` 当前建议分成 4 层测试：
 
-1. `unittest` 单元测试
+1. 单元测试
 2. 轻量集成测试
 3. `tools/regression_check.ps1` 全量回归
 4. 少量人工视觉验收
+
+## 推荐安装
+
+优先使用可安装包方式：
+
+```bash
+python -m venv .venv
+. .venv/Scripts/activate
+python -m pip install --upgrade pip
+python -m pip install -e .[dev]
+```
+
+如果只走兼容路径：
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install pytest
+```
 
 ## 自动化部分
 
@@ -17,16 +35,22 @@
 - 最小生成链路
 - `QA.txt` / `QA.json` 结构与关键字段
 
-运行方式：
+优先运行方式：
+
+```bash
+python -m pytest tests -q
+```
+
+兼容运行方式：
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+PowerShell 快捷入口：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
-```
-
-或：
-
-```powershell
-python -m unittest discover -s .\tests -v
 ```
 
 全量回归：
@@ -53,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 ## 运行时注意事项
 
 - `legacy clone` 路径已经标记为 deprecated，仅用于没有 slide pool 的旧模板兜底
-- 如果 legacy clone 目录页资源修复连续失败，生成流程现在会明确报错，而不是静默继续
+- 如果 legacy clone 目录页资源修复连续失败，生成流程会明确报错，而不是静默继续
 - 新模板应优先维护 `manifest.slide_pools`
 
 可直接生成视觉验收批次：
@@ -62,10 +86,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
 ```
 
-人工验收说明见 [`docs/HUMAN_VISUAL_QA.md`](./HUMAN_VISUAL_QA.md)。
+人工验收说明见 [docs/HUMAN_VISUAL_QA.md](./HUMAN_VISUAL_QA.md)。
 
 ## 当前测试入口
 
 - 单元与轻集成测试：`tests/`
-- 自动化运行入口：[tools/run_unit_tests.ps1](/C:/Users/CHENHU/Documents/cursor/project/AI-atuo-ppt/tools/run_unit_tests.ps1)
-- 全量回归入口：[tools/regression_check.ps1](/C:/Users/CHENHU/Documents/cursor/project/AI-atuo-ppt/tools/regression_check.ps1)
+- 自动化运行入口：[tools/run_unit_tests.ps1](../tools/run_unit_tests.ps1)
+- 全量回归入口：[tools/regression_check.ps1](../tools/regression_check.ps1)

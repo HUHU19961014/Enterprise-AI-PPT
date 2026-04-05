@@ -27,7 +27,7 @@ class CliTests(unittest.TestCase):
         with (
             patch("sys.argv", ["sie-autoppt", "ai-check", "--topic", "健康检查"]),
             patch(
-                "tools.sie_autoppt.cli.load_openai_responses_config",
+                "tools.sie_autoppt.services.load_openai_responses_config",
                 return_value=OpenAIResponsesConfig(
                     api_key="test-key",
                     base_url="https://api.openai.com/v1",
@@ -38,7 +38,7 @@ class CliTests(unittest.TestCase):
                     api_style="responses",
                 ),
             ),
-            patch("tools.sie_autoppt.cli.plan_deck_spec_with_ai", return_value=deck),
+            patch("tools.sie_autoppt.services.plan_deck_spec_with_ai", return_value=deck),
             redirect_stdout(stdout),
         ):
             cli.main()
@@ -67,7 +67,7 @@ class CliTests(unittest.TestCase):
         with (
             patch("sys.argv", ["sie-autoppt", "ai-check"]),
             patch(
-                "tools.sie_autoppt.cli.load_openai_responses_config",
+                "tools.sie_autoppt.services.load_openai_responses_config",
                 side_effect=OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning."),
             ),
             redirect_stderr(stderr),
@@ -94,7 +94,7 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         with (
             patch("sys.argv", ["sie-autoppt", "ai-check", "--planner-command", "echo test"]),
-            patch("tools.sie_autoppt.cli.plan_deck_spec_with_ai", return_value=deck),
+            patch("tools.sie_autoppt.services.plan_deck_spec_with_ai", return_value=deck),
             redirect_stdout(stdout),
         ):
             cli.main()

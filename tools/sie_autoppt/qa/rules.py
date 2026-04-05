@@ -1,11 +1,13 @@
 import re
 import zipfile
+from collections import Counter
 from pathlib import Path
 from xml.etree import ElementTree
 
 from pptx import Presentation
 
 from .models import QaChecks, QaMetrics, QaResult
+from ..patterns import infer_pattern_details
 from ..template_manifest import TemplateManifest, load_template_manifest
 
 
@@ -140,6 +142,80 @@ def _overflow_risk_boxes(prs: Presentation) -> int:
     return risk
 
 
+def _long_text_shape_count(prs: Presentation) -> int:
+    count = 0
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                text = re.sub(r"\s+", " ", shape.text_frame.text).strip()
+                if len(text) > 120:
+                    count += 1
+    return count
+
+
+def _repeated_title_count(render_trace) -> int:
+    if render_trace is None:
+        return 0
+    titles = [trace.title.strip() for trace in render_trace.page_traces if trace.title.strip()]
+    counts = Counter(titles)
+    return sum(count - 1 for count in counts.values() if count > 1)
+
+
+def _fallback_render_pages(render_trace) -> int:
+    if render_trace is None:
+        return 0
+    return sum(1 for trace in render_trace.page_traces if trace.fallback_reason or trace.render_route.startswith("native_fallback:"))
+
+
+def _reference_style_page_count(render_trace) -> int:
+    if render_trace is None:
+        return 0
+    return sum(1 for trace in render_trace.page_traces if trace.reference_style_id)
+
+
+def _low_confidence_pattern_pages(render_trace) -> int:
+    if render_trace is None:
+        return 0
+    return sum(
+        1
+        for trace in render_trace.page_traces
+        if infer_pattern_details(trace.title, []).low_confidence
+    )
+
+
+def _sparse_bullet_pages(render_trace) -> int:
+    if render_trace is None:
+        return 0
+    return sum(1 for trace in render_trace.page_traces if not trace.title.strip())
+
+
+def _template_pool_mode(manifest: TemplateManifest) -> str:
+    return "PASS" if manifest.slide_pools else "WARN"
+
+
+def _reference_style_coverage(render_trace) -> str:
+    if render_trace is None:
+        return "PASS"
+    for trace in render_trace.page_traces:
+        if trace.reference_style_id and trace.render_route.startswith("native_fallback:"):
+            return "WARN"
+    return "PASS"
+
+
+def _preflight_status(render_trace) -> str:
+    if render_trace is None:
+        return "PASS"
+    return "WARN" if render_trace.preflight_notes else "PASS"
+
+
+def _content_density_status(long_text_shape_count: int, overflow_risk_boxes: int) -> str:
+    return "WARN" if long_text_shape_count > 0 or overflow_risk_boxes > 0 else "PASS"
+
+
+def _title_uniqueness_status(repeated_title_count: int) -> str:
+    return "WARN" if repeated_title_count > 0 else "PASS"
+
+
 def build_qa_result(
     pptx_path: Path,
     chapter_count: int,
@@ -170,6 +246,13 @@ def build_qa_result(
             if _is_directory_slide(slide, chapter_lines, manifest=manifest)
         ]
     overflow_risk = _overflow_risk_boxes(prs)
+    long_text_shape_count = _long_text_shape_count(prs)
+    repeated_title_count = _repeated_title_count(render_trace)
+    fallback_render_pages = _fallback_render_pages(render_trace)
+    low_confidence_pattern_pages = _low_confidence_pattern_pages(render_trace)
+    reference_style_pages = _reference_style_page_count(render_trace)
+    sparse_bullet_pages = _sparse_bullet_pages(render_trace)
+    preflight_note_count = len(render_trace.preflight_notes) if render_trace is not None else 0
 
     return QaResult(
         file=str(pptx_path),
@@ -189,12 +272,28 @@ def build_qa_result(
             theme_title_font="PASS" if _theme_title_font_ok(prs, manifest) else "WARN",
             directory_title_font="PASS" if _directory_title_font_ok(prs, actual_dirs, chapter_lines, manifest) else "WARN",
             directory_assets_preserved="PASS" if _directory_assets_preserved(pptx_path, actual_dirs) else "WARN",
+            template_pool_mode=_template_pool_mode(manifest),
+            reference_style_coverage=_reference_style_coverage(render_trace),
+            preflight=_preflight_status(render_trace),
+            content_density=_content_density_status(long_text_shape_count, overflow_risk),
+            title_uniqueness=_title_uniqueness_status(repeated_title_count),
         ),
         metrics=QaMetrics(
             overflow_risk_boxes=overflow_risk,
+            long_text_shape_count=long_text_shape_count,
+            sparse_bullet_pages=sparse_bullet_pages,
+            repeated_title_count=repeated_title_count,
+            fallback_render_pages=fallback_render_pages,
+            low_confidence_pattern_pages=low_confidence_pattern_pages,
+            reference_style_pages=reference_style_pages,
+            preflight_note_count=preflight_note_count,
         ),
         notes=[
             "overflow_risk_boxes > 0 means manual review recommended.",
+            "long_text_shape_count > 0 indicates dense text that may need layout polish.",
+            "fallback_render_pages > 0 means some pages fell back from requested reference styles.",
+            "low_confidence_pattern_pages > 0 means some page titles looked semantically ambiguous.",
+            "preflight_note_count > 0 means runtime detected template or content warnings before final QA.",
             "render_trace.page_traces records each page's render route and fallback reason when available.",
         ],
     )

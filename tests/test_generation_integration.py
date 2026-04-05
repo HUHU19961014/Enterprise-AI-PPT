@@ -47,14 +47,23 @@ class GenerationIntegrationTests(unittest.TestCase):
 
             qa = json.loads(json_report.read_text(encoding="utf-8"))
             self.assertEqual(qa["template_name"], "sie_template")
-            self.assertEqual(qa["schema_version"], "1.2")
+            self.assertEqual(qa["schema_version"], "1.4")
             self.assertEqual(qa["checks"]["ending_last"], "PASS")
             self.assertEqual(qa["checks"]["theme_title_font"], "PASS")
             self.assertEqual(qa["checks"]["directory_title_font"], "PASS")
             self.assertEqual(qa["checks"]["directory_assets_preserved"], "PASS")
+            self.assertEqual(qa["checks"]["template_pool_mode"], "PASS")
+            self.assertEqual(qa["checks"]["reference_style_coverage"], "PASS")
+            self.assertEqual(qa["checks"]["preflight"], "PASS")
+            self.assertIn("content_density", qa["checks"])
+            self.assertIn("title_uniqueness", qa["checks"])
             self.assertEqual(qa["render_trace"]["input_kind"], "html")
             self.assertEqual(qa["render_trace"]["body_render_mode"], "preallocated_pool")
             self.assertEqual(len(qa["render_trace"]["page_traces"]), 3)
+            self.assertIn("fallback_render_pages", qa["metrics"])
+            self.assertIn("low_confidence_pattern_pages", qa["metrics"])
+            self.assertIn("preflight_note_count", qa["metrics"])
+            self.assertEqual(qa["metrics"]["preflight_note_count"], 0)
 
     def test_generate_reference_style_deck_without_reference_import(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -87,8 +96,13 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertEqual(qa["checks"]["ending_last"], "PASS")
             self.assertEqual(qa["actual_directory_pages"], [3, 5, 7])
             self.assertEqual(qa["checks"]["directory_assets_preserved"], "PASS")
+            self.assertEqual(qa["checks"]["reference_style_coverage"], "WARN")
+            self.assertEqual(qa["checks"]["preflight"], "WARN")
             self.assertEqual(qa["render_trace"]["reference_import_applied"], False)
             self.assertTrue(qa["render_trace"]["reference_import_reason"])
+            self.assertEqual(qa["metrics"]["preflight_note_count"], 1)
+            self.assertEqual(qa["render_trace"]["preflight_notes"], ["reference body slide library is unavailable"])
+            self.assertGreaterEqual(qa["metrics"]["fallback_render_pages"], 1)
             self.assertEqual(
                 [trace["render_route"] for trace in qa["render_trace"]["page_traces"]],
                 [
@@ -112,6 +126,7 @@ class GenerationIntegrationTests(unittest.TestCase):
 
             self.assertTrue(artifacts.output_path.exists())
             self.assertTrue(artifacts.render_trace.reference_import_applied)
+            self.assertEqual(artifacts.render_trace.preflight_notes, [])
             self.assertEqual(
                 [trace.render_route for trace in artifacts.render_trace.page_traces],
                 [

@@ -175,6 +175,7 @@ class DeckRenderTrace:
     body_render_mode: str
     reference_import_applied: bool
     reference_import_reason: str = ""
+    preflight_notes: list[str] = field(default_factory=list)
     page_traces: list[PageRenderTrace] = field(default_factory=list)
 
 

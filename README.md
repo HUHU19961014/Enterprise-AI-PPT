@@ -1,6 +1,14 @@
 # SIE AutoPPT
 
-`SIE AutoPPT` is now an `AI planning + deterministic PPTX rendering` pipeline for enterprise slides.
+`SIE AutoPPT` is an `AI planning + deterministic PPTX rendering` pipeline for enterprise slides.
+
+It is designed for a practical workflow:
+
+1. use AI to explore a topic, brief, image, or source material
+2. converge on structure and layout intent
+3. convert that intent into `DeckSpec JSON` or structured HTML
+4. render a `.pptx` against an enterprise template
+5. do final human polish inside PowerPoint
 
 The project no longer assumes that users hand-write compliant HTML first. It supports:
 
@@ -11,6 +19,66 @@ The project no longer assumes that users hand-write compliant HTML first. It sup
 - AI topic -> `DeckSpec JSON` -> PPTX
 - OpenAI-compatible hosted providers
 - local gateways and external agent planners
+
+## Quickstart
+
+### 1. Install
+
+```bash
+python -m venv .venv
+. .venv/Scripts/activate
+python -m pip install --upgrade pip
+python -m pip install -e .[dev]
+```
+
+If your shell does not support editable installs with extras, you can still use:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install pytest
+```
+
+### 2. Smoke test the local codebase
+
+```bash
+python -m pytest tests -q
+python -m sie_autoppt ai-check --topic "AI AutoPPT 健康检查"
+```
+
+### 3. Generate your first deck
+
+Plan from topic:
+
+```bash
+python -m sie_autoppt ai-plan \
+  --topic "制造企业 AI AutoPPT 方案汇报" \
+  --brief "突出项目现状、三层架构、实施路径和风险控制" \
+  --min-slides 6 \
+  --max-slides 10 \
+  --plan-output ./projects/generated/first.deck.json
+```
+
+Render from DeckSpec JSON:
+
+```bash
+python -m sie_autoppt render \
+  --deck-json ./projects/generated/first.deck.json \
+  --output-name First_Render
+```
+
+One-step HTML -> PPTX:
+
+```bash
+python -m sie_autoppt make \
+  --html ./input/uat_plan_sample.html \
+  --output-name Html_Render
+```
+
+Compatibility script entrypoint still works:
+
+```powershell
+python .\tools\sie_autoppt_cli.py
+```
 
 ## Architecture
 
@@ -23,15 +91,7 @@ The current workflow is split into three layers:
 3. `Human polish layer`
    Final visual tuning, alignment, animation, and client-facing refinement.
 
-## Commands
-
-Main CLI:
-
-```powershell
-python .\tools\sie_autoppt_cli.py
-```
-
-Supported workflow stages:
+## Main commands
 
 - `make`: one-step HTML -> PPTX
 - `plan`: HTML -> `DeckSpec JSON`
@@ -40,7 +100,7 @@ Supported workflow stages:
 - `ai-make`: topic -> PPTX
 - `ai-check`: planner connectivity smoke test
 
-Examples:
+## HTML and planning examples
 
 ```powershell
 python .\tools\sie_autoppt_cli.py plan `
@@ -87,23 +147,21 @@ AI planning page-count options:
 
 - `--chapters`: exact body-page count
 - `--min-slides` / `--max-slides`: let AI choose inside a range
-- if none are provided, the planner now infers a reasonable range from source density instead of forcing 3 pages
+- if none are provided, the planner infers a reasonable range from source density instead of forcing 3 pages
 
 HTML planning/rendering page-count options:
 
 - if `--chapters` is omitted, legacy HTML keeps all detected legacy sections and `<slide>` HTML keeps all detected slide tags
 - `--chapters` still works as an explicit cap for both `plan` and `make`
 
-## Provider Compatibility
+## Provider compatibility
 
-The planner now supports multiple backend patterns:
+The planner supports multiple backend patterns:
 
 - `Responses API` for official OpenAI-style providers
 - `chat/completions` for OpenAI-compatible providers
 - local gateways with optional empty API keys
 - external planner commands that read JSON from stdin and write JSON to stdout
-
-Examples:
 
 ### OpenAI-compatible provider
 
@@ -113,8 +171,7 @@ $env:OPENAI_BASE_URL = "https://api.siliconflow.cn/v1"
 $env:SIE_AUTOPPT_LLM_API_STYLE = "chat_completions"
 $env:SIE_AUTOPPT_LLM_MODEL = "deepseek-ai/DeepSeek-V3.2"
 
-python .\tools\sie_autoppt_cli.py ai-check `
-  --topic "provider healthcheck"
+python -m sie_autoppt ai-check --topic "provider healthcheck"
 ```
 
 ### Local gateway
@@ -125,11 +182,10 @@ $env:OPENAI_BASE_URL = "http://localhost:4000/v1"
 $env:SIE_AUTOPPT_ALLOW_EMPTY_API_KEY = "true"
 $env:SIE_AUTOPPT_LLM_MODEL = "deepseek-chat"
 
-python .\tools\sie_autoppt_cli.py ai-check `
-  --topic "local gateway healthcheck"
+python -m sie_autoppt ai-check --topic "local gateway healthcheck"
 ```
 
-### Existing agent or OpenClaw-style integration
+### Existing agent or external planner integration
 
 If another agent already owns model access, you do not need a second API key inside this project.
 
@@ -146,12 +202,12 @@ Option B:
 Example:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-check `
+python -m sie_autoppt ai-check `
   --planner-command "python .\your_agent_bridge.py" `
   --topic "external planner check"
 ```
 
-## Template and Reference Slides
+## Template and reference slides
 
 Canonical template files:
 
@@ -164,8 +220,27 @@ Reference-style body pages now use native PPTX package merge by default. The bun
 2. text marker match
 3. fallback page number
 
-Templates without `slide_pools` still have a legacy runtime clone path, but it is now explicitly deprecated. New templates should migrate to preallocated pools.
-The bundled default template now ships with a 20-pair preallocated slide pool, so classic HTML decks are no longer limited to three body pages.
+Templates without `slide_pools` still have a legacy runtime clone path, but it is explicitly deprecated. New templates should migrate to preallocated pools.
+The bundled default template ships with a 20-pair preallocated slide pool, so classic HTML decks are no longer limited to three body pages.
+
+## Testing
+
+Preferred commands:
+
+```bash
+python -m pytest tests -q
+```
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+PowerShell helpers:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
+```
 
 ## Docs
 
@@ -173,20 +248,11 @@ The bundled default template now ships with a 20-pair preallocated slide pool, s
 - [Deck JSON spec](./docs/DECK_JSON_SPEC.md)
 - [Input spec](./docs/INPUT_SPEC.md)
 - [Testing](./docs/TESTING.md)
+- [Human visual QA](./docs/HUMAN_VISUAL_QA.md)
 
-## Testing
+## Current status
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
-```
-
-## Current Status
-
-Already fixed in the current codebase:
+Already solid in the current codebase:
 
 - AI planning entrypoint
 - `DeckSpec JSON` contract
@@ -200,7 +266,8 @@ Already fixed in the current codebase:
 - safe external planner execution
 - SiliconFlow / OpenAI-compatible provider support
 
-Still not fully finished:
+Still in progress:
 
-- full web-service-grade packaging and auth management are not done
-- external agent bridges are generic, but no OpenClaw-specific bridge script is bundled yet
+- packaging and end-user workflow hardening
+- richer preflight/content QA for delivery confidence
+- further modularization of planning/rendering internals

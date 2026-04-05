@@ -31,7 +31,19 @@ def format_qa_text(result: QaResult) -> str:
             f"check_theme_title_font_{theme_font_token}: {checks.theme_title_font}",
             f"check_directory_title_font_{directory_font_token}: {checks.directory_title_font}",
             f"check_directory_assets_preserved: {checks.directory_assets_preserved}",
+            f"check_template_pool_mode: {checks.template_pool_mode}",
+            f"check_reference_style_coverage: {checks.reference_style_coverage}",
+            f"check_preflight: {checks.preflight}",
+            f"check_content_density: {checks.content_density}",
+            f"check_title_uniqueness: {checks.title_uniqueness}",
             f"overflow_risk_boxes: {metrics.overflow_risk_boxes}",
+            f"long_text_shape_count: {metrics.long_text_shape_count}",
+            f"sparse_bullet_pages: {metrics.sparse_bullet_pages}",
+            f"repeated_title_count: {metrics.repeated_title_count}",
+            f"fallback_render_pages: {metrics.fallback_render_pages}",
+            f"low_confidence_pattern_pages: {metrics.low_confidence_pattern_pages}",
+            f"reference_style_pages: {metrics.reference_style_pages}",
+            f"preflight_note_count: {metrics.preflight_note_count}",
         ]
     )
     if result.render_trace is not None:
@@ -44,6 +56,8 @@ def format_qa_text(result: QaResult) -> str:
         )
         if result.render_trace.reference_import_reason:
             lines.append(f"reference_import_reason: {result.render_trace.reference_import_reason}")
+        for preflight_note in result.render_trace.preflight_notes:
+            lines.append(f"preflight_note: {preflight_note}")
         for page_trace in result.render_trace.page_traces:
             lines.append(
                 "page_render_trace: "

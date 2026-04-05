@@ -40,9 +40,11 @@ def _directory_lines_for_page(body_pages: list[BodyPageSpec], active_index: int)
     return build_directory_window(body_pages, active_index)
 
 
-def validate_slide_pool_configuration(manifest: TemplateManifest, body_page_count: int, slide_count: int):
+def validate_slide_pool_configuration(manifest: TemplateManifest, body_page_count: int, slide_count: int) -> list[str]:
+    notes: list[str] = []
     if not manifest.slide_pools:
-        return
+        notes.append("template manifest does not define a preallocated slide pool; legacy runtime cloning will be used")
+        return notes
 
     directory_pool = list(manifest.slide_pools.directory)
     body_pool = list(manifest.slide_pools.body)
@@ -65,6 +67,7 @@ def validate_slide_pool_configuration(manifest: TemplateManifest, body_page_coun
         raise ValueError("Template manifest slide pool is invalid: slide index exceeds the template slide count.")
     if len(set(used_indices)) != len(used_indices):
         raise ValueError("Template manifest slide pool is invalid: duplicate slide index detected.")
+    return notes
 
 
 def _reference_import_unavailable_reason(body_pages: list[BodyPageSpec], reference_body_path: Path | None) -> str:
@@ -254,6 +257,21 @@ def _refresh_preallocated_directory_assets(pptx_path: Path, body_page_count: int
     return slide_assets_preserved(pptx_path, source_idx=source_idx, target_indices=target_indices)
 
 
+def _build_preflight_notes(
+    body_pages: list[BodyPageSpec],
+    manifest: TemplateManifest,
+    slide_count: int,
+    reference_body_path: Path | None,
+) -> list[str]:
+    notes = validate_slide_pool_configuration(manifest, len(body_pages), slide_count)
+    reference_reason = _reference_import_unavailable_reason(body_pages, reference_body_path)
+    if reference_reason:
+        notes.append(reference_reason)
+    if any(len(re.sub(r"\s+", " ", bullet).strip()) > 120 for page in body_pages for bullet in page.bullets):
+        notes.append("some bullet content is unusually long and may require manual layout review")
+    return notes
+
+
 def _generate_ppt_from_plan(
     deck_plan: DeckPlan,
     input_kind: str,
@@ -281,7 +299,7 @@ def _generate_ppt_from_plan(
             f"模板页数不足，至少需要 {DEFAULT_MIN_TEMPLATE_SLIDES} 页，实际为 {len(prs.slides)} 页。"
         )
 
-    validate_slide_pool_configuration(manifest, len(body_pages), len(prs.slides))
+    preflight_notes = _build_preflight_notes(body_pages, manifest, len(prs.slides), reference_body_path)
     apply_theme_title(prs, deck.cover_title, manifest)
     if manifest.slide_pools and manifest.slide_pools.ending is not None and manifest.slide_pools.ending < len(prs.slides):
         thanks_slide_id = int(prs.slides._sldIdLst[manifest.slide_pools.ending].id)
@@ -326,6 +344,7 @@ def _generate_ppt_from_plan(
         body_render_mode="preallocated_pool" if used_preallocated_pool else "legacy_clone",
         reference_import_applied=reference_import_applied,
         reference_import_reason=reference_import_reason,
+        preflight_notes=preflight_notes,
         page_traces=_build_page_render_traces(body_pages, reference_import_applied, reference_import_reason),
     )
     return GenerationArtifacts(
