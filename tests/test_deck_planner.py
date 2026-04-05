@@ -46,3 +46,14 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(plan.pattern_ids, [page.pattern_id for page in plan.deck.body_pages])
         self.assertEqual(len(plan.chapter_lines), 5)
         self.assertEqual(plan.chapter_lines[-1], "Q&A")
+
+    def test_pcb_sample_builds_structured_payloads_for_renderers(self):
+        html = (INPUT_DIR / "pcb_erp_general_solution.html").read_text(encoding="utf-8")
+
+        deck = build_deck_spec_from_html(html, chapters=3)
+
+        self.assertEqual([page.pattern_id for page in deck.body_pages], ["solution_architecture", "process_flow", "org_governance"])
+        self.assertEqual(len(deck.body_pages[0].payload.get("layers", [])), 4)
+        self.assertEqual(len(deck.body_pages[1].payload.get("steps", [])), 4)
+        self.assertEqual(deck.body_pages[2].payload.get("label_prefix"), "重点")
+        self.assertTrue(deck.body_pages[2].payload.get("footer_text"))

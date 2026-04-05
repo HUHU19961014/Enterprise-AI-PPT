@@ -16,6 +16,15 @@ def normalize_text_for_box(text: str, max_chars: int = 44) -> str:
     return "\n".join(lines[:4])
 
 
+def split_title_detail(text: str) -> tuple[str, str]:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    for sep in ("：", ":", " - ", " | "):
+        if sep in normalized:
+            title, detail = normalized.split(sep, 1)
+            return title.strip(), detail.strip()
+    return normalized, normalized
+
+
 def choose_title_font_size(text: str, default: int = 24) -> int:
     n = len(text)
     if n > 28:
@@ -185,9 +194,18 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
     fill_rgb = _rgb(spec["fill_rgb"])
     line_rgb = _rgb(spec["line_rgb"])
     number_box = spec["number_box"]
-    text_box = spec["text_box"]
+    title_box = spec.get("title_box", {})
+    detail_box = spec.get("detail_box")
+    if detail_box is None:
+        detail_box = spec["text_box"]
+    default_title_left = int(number_box["left_offset"]) + int(number_box["width"]) + 100000
+    steps = list(page.payload.get("steps", []))
+    if not steps:
+        for index, text in enumerate(page.bullets[: int(spec.get("max_items", 4))], start=1):
+            title, detail = split_title_detail(text)
+            steps.append({"number": f"{index:02d}", "title": title, "detail": detail})
 
-    for i, text in enumerate(page.bullets[: int(spec.get("max_items", 4))]):
+    for i, step in enumerate(steps[: int(spec.get("max_items", 4))]):
         left = start_x + i * (step_w + gap)
         box = slide.shapes.add_shape(1, left, y, step_w, step_h)
         box.fill.solid()
@@ -199,19 +217,42 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
             y + int(number_box["top_offset"]),
             int(number_box["width"]),
             int(number_box["height"]),
-            f"{i + 1:02d}",
+            str(step.get("number", f"{i + 1:02d}")),
             size_pt=int(number_box["font_pt"]),
             bold=True,
+            align=PP_ALIGN.CENTER,
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
         )
-        safe_text = normalize_text_for_box(text, int(text_box["wrap_chars"]))
         add_textbox(
             slide,
-            left + int(text_box["left_offset"]),
-            y + int(text_box["top_offset"]),
-            step_w - int(text_box["width_padding"]),
-            step_h - int(text_box["height_padding"]),
+            left + int(title_box.get("left_offset", default_title_left)),
+            y + int(title_box.get("top_offset", number_box["top_offset"])),
+            step_w - int(title_box.get("width_padding", detail_box["width_padding"])),
+            int(title_box.get("height", 220000)),
+            str(step.get("title", "")),
+            size_pt=int(title_box.get("font_pt", 12)),
+            bold=True,
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
+        )
+        safe_text = normalize_text_for_box(str(step.get("detail", "")), int(detail_box["wrap_chars"]))
+        add_textbox(
+            slide,
+            left + int(detail_box["left_offset"]),
+            y + int(detail_box["top_offset"]),
+            step_w - int(detail_box["width_padding"]),
+            step_h - int(detail_box["height_padding"]),
             safe_text,
-            size_pt=int(text_box["font_pt"]),
+            size_pt=int(detail_box["font_pt"]),
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
         )
 
 
@@ -223,7 +264,15 @@ def _render_architecture_layers(slide, page: BodyPageSpec, manifest: TemplateMan
     body_text = spec["body_text"]
     palette = spec["palette"]
 
-    for i, text in enumerate(page.bullets[:4]):
+    layer_items = list(page.payload.get("layers", []))
+    if layer_items:
+        layer_texts = [f"{item.get('title', '')}：{item.get('detail', '')}".strip("：") for item in layer_items[:4]]
+        layer_labels = [str(item.get("label", f"L{i + 1:02d}")) for i, item in enumerate(layer_items[:4])]
+    else:
+        layer_texts = page.bullets[:4]
+        layer_labels = [f"L{i + 1:02d}" for i in range(len(layer_texts))]
+
+    for i, text in enumerate(layer_texts):
         y = int(frame["top"]) + i * (int(frame["layer_height"]) + int(frame["gap_y"]))
         left = int(frame["left"])
         width = int(frame["width"])
@@ -251,10 +300,14 @@ def _render_architecture_layers(slide, page: BodyPageSpec, manifest: TemplateMan
             y + int(tag_text["top_offset"]),
             int(tag_text["width"]),
             int(tag_text["height"]),
-            f"L{i + 1:02d}",
+            layer_labels[i],
             size_pt=int(tag_text["font_pt"]),
             bold=True,
             color=(255, 255, 255),
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
         )
 
         safe_text = normalize_text_for_box(text, int(body_text["wrap_chars"]))
@@ -326,7 +379,14 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
     label_text = spec["label_text"]
     body_text = spec["body_text"]
 
-    for i, text in enumerate(page.bullets[:4]):
+    cards = list(page.payload.get("cards", []))
+    if not cards:
+        cards = []
+        for index, text in enumerate(page.bullets[:4], start=1):
+            title, detail = split_title_detail(text)
+            cards.append({"label": title or f"{page.payload.get('label_prefix', label_text['label_prefix'])} {index}", "detail": detail})
+
+    for i, card_data in enumerate(cards[:4]):
         row, col = divmod(i, 2)
         left = int(grid["left"]) + col * (int(grid["card_width"]) + int(grid["gap_x"]))
         top = int(grid["top"]) + row * (int(grid["card_height"]) + int(grid["gap_y"]))
@@ -352,13 +412,17 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
             top + int(label_text["top_offset"]),
             int(label_text["width"]),
             int(label_text["height"]),
-            f"{label_prefix} {i + 1}",
+            str(card_data.get("label", f"{label_prefix} {i + 1}")),
             size_pt=int(label_text["font_pt"]),
             bold=True,
             color=_rgb(label_text["text_rgb"]),
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
         )
 
-        safe_text = normalize_text_for_box(text, int(body_text["wrap_chars"]))
+        safe_text = normalize_text_for_box(str(card_data.get("detail", "")), int(body_text["wrap_chars"]))
         add_textbox(
             slide,
             left + int(body_text["left_offset"]),
@@ -367,6 +431,10 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
             int(grid["card_height"]) - int(body_text["height_padding"]),
             safe_text,
             size_pt=int(body_text["font_pt"]),
+            margin_left=0,
+            margin_right=0,
+            margin_top=0,
+            margin_bottom=0,
         )
 
     footer = spec["footer_bar"]
@@ -386,8 +454,12 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
         int(footer["text_top"]),
         int(footer["text_width"]),
         int(footer["text_height"]),
-        str(page.payload.get("footer_text", footer["text"])),
+        str(page.payload.get("footer_text", page.subtitle or footer["text"])),
         size_pt=int(footer["font_pt"]),
+        margin_left=0,
+        margin_right=0,
+        margin_top=0,
+        margin_bottom=0,
     )
 
 

@@ -69,8 +69,21 @@ def add_textbox(
     bold: bool | None = None,
     color=None,
     align=PP_ALIGN.LEFT,
+    margin_left: int | None = None,
+    margin_right: int | None = None,
+    margin_top: int | None = None,
+    margin_bottom: int | None = None,
 ):
     textbox = slide.shapes.add_textbox(left, top, width, height)
+    text_frame = textbox.text_frame
+    if margin_left is not None:
+        text_frame.margin_left = margin_left
+    if margin_right is not None:
+        text_frame.margin_right = margin_right
+    if margin_top is not None:
+        text_frame.margin_top = margin_top
+    if margin_bottom is not None:
+        text_frame.margin_bottom = margin_bottom
     write_text(
         textbox,
         text,

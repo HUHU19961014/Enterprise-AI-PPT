@@ -75,17 +75,24 @@
       "number_box": {
         "left_offset": 100000,
         "top_offset": 90000,
-        "width": 260000,
+        "width": 340000,
+        "height": 240000,
+        "font_pt": 12
+      },
+      "title_box": {
+        "left_offset": 540000,
+        "top_offset": 90000,
+        "width_padding": 680000,
         "height": 220000,
         "font_pt": 12
       },
-      "text_box": {
+      "detail_box": {
         "left_offset": 100000,
         "top_offset": 360000,
         "width_padding": 200000,
         "height_padding": 460000,
-        "wrap_chars": 24,
-        "font_pt": 11
+        "wrap_chars": 14,
+        "font_pt": 10
       }
     },
     "solution_architecture": {
@@ -192,7 +199,7 @@
         "height": 220000,
         "font_pt": 10,
         "text_rgb": [255, 255, 255],
-        "label_prefix": "Focus"
+        "label_prefix": "重点"
       },
       "body_text": {
         "left_offset": 110000,
@@ -214,7 +221,7 @@
         "text_width": 9700000,
         "text_height": 220000,
         "font_pt": 10,
-        "text": "Governance rules should span data, interfaces, process, and release management."
+        "text": "治理要求需要贯穿主数据、接口、流程与上线切换全周期。"
       }
     },
     "comparison_upgrade": {

@@ -135,6 +135,62 @@ def derive_comparison_cards(raw_items: list[str], fallback_title: str, synthetic
     return cards
 
 
+def build_architecture_layers(payload: InputPayload) -> list[dict[str, str]]:
+    layers = []
+    for index, phase in enumerate(payload.phases[:4], start=1):
+        title = compact_text(phase["name"] or f"Layer {index}", 18)
+        detail = concise_text(phase["func"] or phase["code"] or phase["owner"] or title, 54)
+        layers.append({"label": f"L{index:02d}", "title": title, "detail": detail})
+    return layers
+
+
+def build_process_steps(items: list[str]) -> list[dict[str, str]]:
+    steps = []
+    for index, item in enumerate(items[:4], start=1):
+        title, detail = split_title_detail(item)
+        compact_title = compact_text(title or f"Step {index}", 12)
+        compact_detail = concise_text(detail or title or compact_title, 30)
+        steps.append({"number": f"{index:02d}", "title": compact_title, "detail": compact_detail})
+    return steps
+
+
+def build_governance_cards(items: list[str]) -> list[dict[str, str]]:
+    cards = []
+    for index, item in enumerate(items[:4], start=1):
+        title, detail = split_title_detail(item)
+        label_source = title
+        if title == detail:
+            first_clause = re.split(r"[，、；。,\s]", title, maxsplit=1)[0].strip()
+            label_source = first_clause or title
+        label = compact_text(label_source or f"重点{index}", 8)
+        cards.append({"label": label, "detail": concise_text(detail or title or label, 40)})
+    return cards
+
+
+def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: InputPayload) -> dict[str, object]:
+    if pattern_id == "solution_architecture":
+        layers = build_architecture_layers(payload)
+        if layers:
+            return {
+                "layers": layers,
+                "banner_text": compact_text(page.title, 16),
+            }
+        return {}
+    if pattern_id == "process_flow":
+        steps = build_process_steps(payload.scenarios or page.bullets)
+        return {"steps": steps}
+    if pattern_id == "org_governance":
+        cards = build_governance_cards(payload.notes or page.bullets)
+        payload_data: dict[str, object] = {
+            "cards": cards,
+            "label_prefix": "重点",
+        }
+        if payload.footer:
+            payload_data["footer_text"] = concise_text(payload.footer, 72)
+        return payload_data
+    return {}
+
+
 def build_principle_items(success_bullets: list[str], steps: list[tuple[str, str]], conclusion: str) -> list[dict[str, str]]:
     items = []
     for item in success_bullets[:3]:
@@ -327,6 +383,11 @@ def build_page_specs(payload: InputPayload, chapters: int) -> DeckSpec:
                 bullets=page.bullets,
                 pattern_id=choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets),
                 nav_title=page.nav_title or shorten_for_nav(page.title),
+                payload=build_generic_page_payload(
+                    page,
+                    choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets),
+                    payload,
+                ),
             )
             for page in page_specs
         ],
