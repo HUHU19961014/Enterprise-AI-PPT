@@ -8,6 +8,7 @@ from tools.sie_autoppt.planning.deck_planner import (
     build_directory_window,
     clamp_requested_chapters,
 )
+from tools.sie_autoppt.planning.pagination import paginate_body_page
 
 
 class DeckPlannerTests(unittest.TestCase):
@@ -25,6 +26,8 @@ class DeckPlannerTests(unittest.TestCase):
 
         self.assertEqual(len(deck.body_pages), 3)
         self.assertEqual([page.page_key for page in deck.body_pages], ["overview", "scope", "focus"])
+        self.assertEqual([page.content_count for page in deck.body_pages], [len(page.bullets) for page in deck.body_pages])
+        self.assertTrue(all(page.slide_role == "body" for page in deck.body_pages))
         self.assertEqual(len(build_directory_lines(deck.body_pages)), 5)
 
     def test_slide_tag_html_uses_all_detected_pages_by_default(self):
@@ -53,7 +56,13 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(len(deck.body_pages), 4)
         self.assertEqual([page.page_key for page in deck.body_pages], ["slide_1", "slide_2", "slide_3", "slide_4"])
         self.assertEqual([page.pattern_id for page in deck.body_pages[:2]], ["general_business", "process_flow"])
+        self.assertEqual(deck.body_pages[0].layout_variant, "general_business_3")
+        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_3")
         self.assertEqual(deck.body_pages[1].payload["steps"][0]["title"], "Assess")
+        self.assertEqual(deck.body_pages[1].content_count, 3)
+        self.assertFalse(deck.body_pages[1].is_continuation)
+        self.assertEqual(deck.body_pages[1].slide_role, "body")
+        self.assertEqual(deck.body_pages[1].layout_hints["density"], "compact")
 
     def test_card_analysis_html_uses_reference_styles(self):
         html = (INPUT_DIR / "ai_pythonpptx_strategy.html").read_text(encoding="utf-8")
@@ -68,6 +77,7 @@ class DeckPlannerTests(unittest.TestCase):
             [page.pattern_id for page in deck.body_pages],
             ["comparison_upgrade", "capability_ring", "five_phase_path"],
         )
+        self.assertEqual([page.content_count for page in deck.body_pages], [6, 7, 4])
 
     def test_pipeline_returns_matching_pattern_ids_and_directory_lines(self):
         plan = plan_deck_from_html(INPUT_DIR / "architecture_program_sample.html", chapters=3)
@@ -103,7 +113,94 @@ class DeckPlannerTests(unittest.TestCase):
             [page.pattern_id for page in deck.body_pages],
             ["solution_architecture", "process_flow", "org_governance"],
         )
+        self.assertIsNone(deck.body_pages[0].layout_variant)
+        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_5")
+        self.assertEqual(deck.body_pages[2].layout_variant, "org_governance_5")
         self.assertEqual(len(deck.body_pages[0].payload.get("layers", [])), 4)
         self.assertEqual(len(deck.body_pages[1].payload.get("steps", [])), 4)
         self.assertEqual(deck.body_pages[2].payload.get("label_prefix"), "重点")
         self.assertTrue(deck.body_pages[2].payload.get("footer_text"))
+
+    def test_paginate_body_page_creates_continuation_metadata(self):
+        from tools.sie_autoppt.models import BodyPageSpec
+
+        page = BodyPageSpec(
+            page_key="scope",
+            title="Scope",
+            subtitle="Subtitle",
+            bullets=["A", "B", "C", "D", "E", "F"],
+            pattern_id="process_flow",
+            nav_title="Scope",
+            slide_role="body",
+            layout_variant="process_flow_5",
+        )
+
+        pages = paginate_body_page(page, max_items_per_page=5)
+
+        self.assertEqual(len(pages), 2)
+        self.assertEqual(pages[0].source_item_range, (0, 5))
+        self.assertEqual(pages[1].page_key, "scope_cont_2")
+        self.assertTrue(pages[1].is_continuation)
+        self.assertEqual(pages[1].continuation_index, 2)
+        self.assertEqual(pages[1].source_item_range, (5, 6))
+
+    def test_slide_tag_html_paginate_overflow_into_continuation_pages(self):
+        html = """
+        <div class="title">Program</div>
+        <slide data-pattern="process_flow">
+          <h2>Roadmap</h2>
+          <ul>
+            <li>Assess current process dependencies across regions</li>
+            <li>Design target operating flow with governance controls</li>
+            <li>Align governance checkpoints with program milestones</li>
+            <li>Prepare migration runbook for cutover readiness</li>
+            <li>Execute pilot launch with cross-team command center</li>
+            <li>Scale to remaining sites with controlled rollout waves</li>
+            <li>Stabilize support model after go-live transition</li>
+            <li>Capture KPI baseline for benefits tracking</li>
+            <li>Expand controls to supplier collaboration touchpoints</li>
+            <li>Close lessons learned and institutionalize playbook</li>
+          </ul>
+        </slide>
+        """
+
+        deck = build_deck_spec_from_html(html, chapters=None)
+
+        self.assertEqual(len(deck.body_pages), 2)
+        self.assertEqual(deck.body_pages[0].page_key, "slide_1")
+        self.assertEqual(deck.body_pages[0].source_item_range, (0, 9))
+        self.assertFalse(deck.body_pages[0].is_continuation)
+        self.assertEqual(deck.body_pages[0].layout_variant, "process_flow_9")
+        self.assertEqual(deck.body_pages[1].page_key, "slide_1_cont_2")
+        self.assertTrue(deck.body_pages[1].is_continuation)
+        self.assertEqual(deck.body_pages[1].continuation_index, 2)
+        self.assertEqual(deck.body_pages[1].source_item_range, (9, 10))
+        self.assertEqual(deck.body_pages[1].layout_variant, "process_flow_3")
+
+    def test_directory_lines_ignore_continuation_pages(self):
+        html = """
+        <slide><h2>Page 1</h2><ul>
+          <li>Assess current process dependencies across regions</li>
+          <li>Design target operating flow with governance controls</li>
+          <li>Align governance checkpoints with program milestones</li>
+          <li>Prepare migration runbook for cutover readiness</li>
+          <li>Execute pilot launch with cross-team command center</li>
+          <li>Scale to remaining sites with controlled rollout waves</li>
+          <li>Stabilize support model after go-live transition</li>
+          <li>Capture KPI baseline for benefits tracking</li>
+          <li>Expand controls to supplier collaboration touchpoints</li>
+          <li>Close lessons learned and institutionalize playbook</li>
+        </ul></slide>
+        <slide><h2>Page 2</h2><p>B</p></slide>
+        <slide><h2>Page 3</h2><p>C</p></slide>
+        <slide><h2>Page 4</h2><p>D</p></slide>
+        <slide><h2>Page 5</h2><p>E</p></slide>
+        """
+
+        deck = build_deck_spec_from_html(html, chapters=None)
+        lines = build_directory_lines(deck.body_pages)
+        window_lines, active_index = build_directory_window(deck.body_pages, 1)
+
+        self.assertEqual(lines, ["Page1", "Page2", "Page3", "Page4", "Page5"])
+        self.assertEqual(window_lines, ["Page1", "Page2", "Page3", "Page4", "Page5"])
+        self.assertEqual(active_index, 0)

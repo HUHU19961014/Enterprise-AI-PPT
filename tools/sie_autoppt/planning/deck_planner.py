@@ -13,6 +13,10 @@ from ..inputs.html_parser import (
 )
 from ..models import BodyPagePayload, BodyPageSpec, DeckSpec, HtmlSlide, InputPayload
 from ..patterns import infer_pattern
+from ..template_manifest import load_template_manifest
+from .content_profiler import profile_bullets
+from .layout_policy import resolve_layout_decision
+from .pagination import paginate_body_page
 
 
 DEFAULT_TITLE = "项目概览与阶段规划"
@@ -27,6 +31,7 @@ DEFAULT_EMPTY_SCOPE = "补充 scenario 内容后，可自动生成场景分析�
 DEFAULT_EMPTY_FOCUS = "补充 note 或 footer 内容后，可自动生成重点事项页。"
 DEFAULT_GOVERNANCE_LABEL = "重点"
 DIRECTORY_WINDOW_SIZE = 5
+STYLE_GUIDE = load_template_manifest().style_guide
 
 
 def build_overview_bullets(payload: InputPayload) -> list[str]:
@@ -163,6 +168,97 @@ def resolve_requested_pattern(pattern_id: str, title: str, bullets: list[str]) -
     return pattern_id or infer_pattern(title, bullets)
 
 
+
+def resolve_page_layout(pattern_id: str, title: str, bullets: list[str]) -> tuple[str, str | None, dict[str, object], int]:
+    content_profile = profile_bullets(bullets, thresholds=STYLE_GUIDE.density_thresholds)
+    layout = resolve_layout_decision(
+        requested_pattern_id=pattern_id,
+        fallback_pattern_id=infer_pattern(title, bullets),
+        content_profile=content_profile,
+        preferred_item_counts=STYLE_GUIDE.preferred_item_counts,
+    )
+    return layout.pattern_id, layout.layout_variant, layout.layout_hints, layout.max_items_per_page
+
+
+
+def build_body_page_spec(
+    *,
+    page_key: str,
+    title: str,
+    subtitle: str,
+    bullets: list[str],
+    pattern_id: str,
+    nav_title: str = "",
+    reference_style_id: str | None = None,
+    payload: BodyPagePayload | None = None,
+    layout_variant: str | None = None,
+    slide_role: str | None = None,
+    layout_hints: dict[str, object] | None = None,
+    is_continuation: bool = False,
+    continuation_index: int | None = None,
+    source_item_range: tuple[int, int] | None = None,
+) -> BodyPageSpec:
+    return BodyPageSpec(
+        page_key=page_key,
+        title=title,
+        subtitle=subtitle,
+        bullets=bullets,
+        pattern_id=pattern_id,
+        nav_title=nav_title,
+        reference_style_id=reference_style_id,
+        payload=payload or {},
+        layout_variant=layout_variant,
+        content_count=len(bullets),
+        is_continuation=is_continuation,
+        continuation_index=continuation_index,
+        slide_role=slide_role,
+        layout_hints=layout_hints or {},
+        source_item_range=source_item_range,
+    )
+
+
+def paginate_page_spec(page: BodyPageSpec, payload: InputPayload, max_items_per_page: int) -> list[BodyPageSpec]:
+    paged = paginate_body_page(page, max_items_per_page=max_items_per_page)
+    pages = []
+    for chunk in paged:
+        chunk_pattern_id, layout_variant, layout_hints, _ = resolve_page_layout(chunk.pattern_id, chunk.title, chunk.bullets)
+        chunk_page = build_body_page_spec(
+            page_key=chunk.page_key,
+            title=chunk.title,
+            subtitle=chunk.subtitle,
+            bullets=chunk.bullets,
+            pattern_id=chunk_pattern_id,
+            nav_title=chunk.nav_title,
+            reference_style_id=chunk.reference_style_id,
+            payload=chunk.payload,
+            layout_variant=layout_variant,
+            slide_role=chunk.slide_role,
+            layout_hints={**layout_hints, **chunk.layout_hints, "page_item_count": len(chunk.bullets)},
+            is_continuation=chunk.is_continuation,
+            continuation_index=chunk.continuation_index,
+            source_item_range=chunk.source_item_range,
+        )
+        pages.append(
+            build_body_page_spec(
+                page_key=chunk_page.page_key,
+                title=chunk_page.title,
+                subtitle=chunk_page.subtitle,
+                bullets=chunk_page.bullets,
+                pattern_id=chunk_pattern_id,
+                nav_title=chunk_page.nav_title,
+                reference_style_id=chunk_page.reference_style_id,
+                payload=build_generic_page_payload(chunk_page, chunk_pattern_id, payload),
+                layout_variant=chunk_page.layout_variant,
+                slide_role=chunk_page.slide_role,
+                layout_hints=chunk_page.layout_hints,
+                is_continuation=chunk_page.is_continuation,
+                continuation_index=chunk_page.continuation_index,
+                source_item_range=chunk_page.source_item_range,
+            )
+        )
+    return pages
+
+
 def build_generic_page_payload(page: BodyPageSpec, pattern_id: str, payload: InputPayload) -> BodyPagePayload:
     page_items = page.bullets if page.page_key.startswith("slide_") else []
     if pattern_id == "solution_architecture":
@@ -292,7 +388,7 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
 
     principle_items = build_principle_items(success_bullets, steps, conclusion)
     page_specs = [
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="comparison_upgrade",
             title="能力边界与工程化解法",
             subtitle=subtitle or DEFAULT_SUBTITLE,
@@ -301,8 +397,9 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
             nav_title=shorten_for_nav("能力边界对比"),
             reference_style_id="comparison_upgrade",
             payload=comparison_payload,
+            slide_role="body",
         ),
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="practice_principles",
             title=success_title or "工程化实践原则",
             subtitle=conclusion or DEFAULT_SCOPE_SUBTITLE,
@@ -311,8 +408,9 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
             nav_title=shorten_for_nav("实践原则"),
             reference_style_id="capability_ring",
             payload={"items": principle_items},
+            slide_role="body",
         ),
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="delivery_pipeline",
             title=pipeline_title or "工业化流水线实施路径",
             subtitle=conclusion or DEFAULT_FOCUS_SUBTITLE,
@@ -321,6 +419,7 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
             nav_title=shorten_for_nav("实施路径"),
             reference_style_id="five_phase_path",
             payload=build_pipeline_payload(steps, conclusion, subtitle),
+            slide_role="body",
         ),
     ]
 
@@ -333,26 +432,19 @@ def build_card_analysis_page_specs(html: str, chapters: int | None) -> DeckSpec 
 def build_slide_tag_page_specs(payload: InputPayload, chapters: int | None) -> DeckSpec:
     page_specs = []
     for index, slide in enumerate(payload.slides, start=1):
-        pattern_id = resolve_requested_pattern(slide.pattern_id, slide.title, slide.bullets)
-        page = BodyPageSpec(
+        pattern_id, layout_variant, layout_hints, max_items_per_page = resolve_page_layout(slide.pattern_id, slide.title, slide.bullets)
+        page = build_body_page_spec(
             page_key=f"slide_{index}",
             title=slide.title,
             subtitle=slide.subtitle,
             bullets=slide.bullets,
             pattern_id=pattern_id,
             nav_title=shorten_for_nav(slide.title),
+            slide_role="body",
+            layout_variant=layout_variant,
+            layout_hints=layout_hints,
         )
-        page_specs.append(
-            BodyPageSpec(
-                page_key=page.page_key,
-                title=page.title,
-                subtitle=page.subtitle,
-                bullets=page.bullets,
-                pattern_id=pattern_id,
-                nav_title=page.nav_title,
-                payload=build_generic_page_payload(page, pattern_id, payload),
-            )
-        )
+        page_specs.extend(paginate_page_spec(page, payload, max_items_per_page))
 
     requested_chapters = clamp_requested_chapters(chapters, len(page_specs))
     cover_title = payload.title or (page_specs[0].title if page_specs else DEFAULT_TITLE)
@@ -366,46 +458,52 @@ def build_legacy_page_specs(payload: InputPayload, chapters: int | None) -> Deck
     focus_title = payload.focus_title or DEFAULT_FOCUS_TITLE
     focus_subtitle = payload.focus_subtitle or payload.footer or DEFAULT_FOCUS_SUBTITLE
     page_specs = [
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="overview",
             title=payload.title or DEFAULT_TITLE,
             subtitle=payload.subtitle or DEFAULT_SUBTITLE,
             bullets=build_overview_bullets(payload),
             pattern_id="general_business",
             nav_title=shorten_for_nav(payload.title or DEFAULT_TITLE),
+            slide_role="body",
         ),
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="scope",
             title=scope_title,
             subtitle=scope_subtitle,
             bullets=build_scope_bullets(payload),
             pattern_id="general_business",
             nav_title=shorten_for_nav(scope_title),
+            slide_role="body",
         ),
-        BodyPageSpec(
+        build_body_page_spec(
             page_key="focus",
             title=focus_title,
             subtitle=focus_subtitle,
             bullets=build_focus_bullets(payload),
             pattern_id="general_business",
             nav_title=shorten_for_nav(focus_title),
+            slide_role="body",
         ),
     ][:requested_chapters]
 
     body_pages = []
     for page in page_specs:
-        pattern_id = choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets)
-        body_pages.append(
-            BodyPageSpec(
-                page_key=page.page_key,
-                title=page.title,
-                subtitle=page.subtitle,
-                bullets=page.bullets,
-                pattern_id=pattern_id,
-                nav_title=page.nav_title or shorten_for_nav(page.title),
-                payload=build_generic_page_payload(page, pattern_id, payload),
-            )
+        requested_pattern_id = choose_page_pattern(page.page_key, page.title, page.subtitle, page.bullets)
+        pattern_id, layout_variant, layout_hints, max_items_per_page = resolve_page_layout(requested_pattern_id, page.title, page.bullets)
+        planned_page = build_body_page_spec(
+            page_key=page.page_key,
+            title=page.title,
+            subtitle=page.subtitle,
+            bullets=page.bullets,
+            pattern_id=pattern_id,
+            nav_title=page.nav_title or shorten_for_nav(page.title),
+            payload=build_generic_page_payload(page, pattern_id, payload),
+            slide_role=page.slide_role,
+            layout_variant=layout_variant,
+            layout_hints=layout_hints,
         )
+        body_pages.extend(paginate_page_spec(planned_page, payload, max_items_per_page))
 
     return DeckSpec(cover_title=payload.title or DEFAULT_TITLE, body_pages=body_pages)
 
@@ -424,7 +522,8 @@ def build_deck_spec_from_html(html: str, chapters: int | None) -> DeckSpec:
 
 
 def build_directory_lines(body_pages: list[BodyPageSpec]) -> list[str]:
-    lines = [page.nav_title or page.title for page in body_pages[:DIRECTORY_WINDOW_SIZE]]
+    logical_pages = [page for page in body_pages if not page.is_continuation]
+    lines = [page.nav_title or page.title for page in logical_pages[:DIRECTORY_WINDOW_SIZE]]
     for fallback in (DEFAULT_SUMMARY_TITLE, "Q&A"):
         if len(lines) >= DIRECTORY_WINDOW_SIZE:
             break
@@ -439,14 +538,26 @@ def build_directory_window(body_pages: list[BodyPageSpec], active_index: int) ->
         lines = build_directory_lines([])
         return lines, 0
 
-    labels = [page.nav_title or page.title for page in body_pages]
+    logical_pages = [page for page in body_pages if not page.is_continuation]
+    if not logical_pages:
+        lines = build_directory_lines([])
+        return lines, 0
+
+    safe_active = max(0, min(active_index, len(body_pages) - 1))
+    active_page = body_pages[safe_active]
+    active_logical_index = 0
+    for logical_index, page in enumerate(logical_pages):
+        if page.page_key == active_page.page_key or (active_page.is_continuation and active_page.page_key.startswith(f"{page.page_key}_cont_")):
+            active_logical_index = logical_index
+            break
+
+    labels = [page.nav_title or page.title for page in logical_pages]
     if len(labels) <= DIRECTORY_WINDOW_SIZE:
-        lines = build_directory_lines(body_pages)
-        safe_index = max(0, min(active_index, len(lines) - 1))
+        lines = build_directory_lines(logical_pages)
+        safe_index = max(0, min(active_logical_index, len(lines) - 1))
         return lines, safe_index
 
-    safe_active = max(0, min(active_index, len(labels) - 1))
     max_start = len(labels) - DIRECTORY_WINDOW_SIZE
-    start = min(max(safe_active - DIRECTORY_WINDOW_SIZE // 2, 0), max_start)
+    start = min(max(active_logical_index - DIRECTORY_WINDOW_SIZE // 2, 0), max_start)
     window = labels[start : start + DIRECTORY_WINDOW_SIZE]
-    return window, safe_active - start
+    return window, active_logical_index - start

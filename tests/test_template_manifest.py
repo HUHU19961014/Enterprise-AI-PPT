@@ -25,6 +25,9 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.slide_roles.directory, 2)
         self.assertEqual(manifest.fonts.theme_title_pt, 40.0)
         self.assertEqual(manifest.fonts.directory_title_pt, 24.0)
+        self.assertEqual(manifest.style_guide.title_max_chars, 32)
+        self.assertEqual(manifest.style_guide.preferred_item_counts, (3, 5, 9))
+        self.assertEqual(manifest.style_guide.overflow_policy, "paginate")
         self.assertEqual(len(manifest.slide_pools.directory), 20)
         self.assertEqual(manifest.slide_pools.directory[:3], (2, 4, 6))
         self.assertEqual(manifest.slide_pools.directory[-1], 40)
@@ -57,6 +60,7 @@ class TemplateManifestTests(unittest.TestCase):
         data["selectors"]["theme_title"]["min_top"] = "2cm"
         data["render_layouts"]["general_business"]["origin_left"] = "3cm"
         data["render_layouts"]["general_business"]["gap_x"] = "0.5cm"
+        data["style_guide"]["body_max_chars"] = 140
 
         with tempfile.TemporaryDirectory() as temp_dir:
             manifest_path = Path(temp_dir) / "temp.manifest.json"
@@ -68,3 +72,4 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.selectors.theme_title.min_top, int(2 * EMU_PER_CM))
         self.assertEqual(manifest.render_layouts["general_business"]["origin_left"], int(3 * EMU_PER_CM))
         self.assertEqual(manifest.render_layouts["general_business"]["gap_x"], int(0.5 * EMU_PER_CM))
+        self.assertEqual(manifest.style_guide.body_max_chars, 140)

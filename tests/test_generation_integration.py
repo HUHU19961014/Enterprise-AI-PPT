@@ -204,3 +204,45 @@ class GenerationIntegrationTests(unittest.TestCase):
             self.assertEqual(len(artifacts.deck_plan.pattern_ids), 6)
             self.assertEqual(artifacts.deck_plan.pattern_ids[:4], ["general_business", "process_flow", "solution_architecture", "org_governance"])
             self.assertEqual(artifacts.render_trace.body_render_mode, "preallocated_pool")
+
+    def test_generate_slide_tag_html_with_continuation_pages(self):
+        html = """
+        <div class="title">Supply Chain Compliance</div>
+        <slide data-pattern="process_flow">
+          <h2>Roadmap</h2>
+          <ul>
+            <li>Assess current process dependencies across regions</li>
+            <li>Design target operating flow with governance controls</li>
+            <li>Align governance checkpoints with program milestones</li>
+            <li>Prepare migration runbook for cutover readiness</li>
+            <li>Execute pilot launch with cross-team command center</li>
+            <li>Scale to remaining sites with controlled rollout waves</li>
+            <li>Stabilize support model after go-live transition</li>
+            <li>Capture KPI baseline for benefits tracking</li>
+            <li>Expand controls to supplier collaboration touchpoints</li>
+            <li>Close lessons learned and institutionalize playbook</li>
+          </ul>
+        </slide>
+        <slide><h2>Summary</h2><p>Close the loop</p></slide>
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            html_path = Path(temp_dir) / "slides_continuation.html"
+            html_path.write_text(html, encoding="utf-8")
+
+            artifacts = generate_ppt_artifacts_from_html(
+                template_path=DEFAULT_TEMPLATE,
+                html_path=html_path,
+                reference_body_path=None,
+                output_prefix="Slide_Tag_Continuation",
+                chapters=None,
+                active_start=0,
+                output_dir=Path(temp_dir),
+            )
+
+            self.assertTrue(artifacts.output_path.exists())
+            self.assertEqual(len(artifacts.deck_plan.deck.body_pages), 3)
+            self.assertEqual(artifacts.deck_plan.deck.body_pages[1].page_key, "slide_1_cont_2")
+            self.assertTrue(artifacts.deck_plan.deck.body_pages[1].is_continuation)
+            self.assertEqual(artifacts.deck_plan.chapter_lines[:2], ["Roadmap", "Summary"])
+            self.assertEqual(len(artifacts.render_trace.page_traces), 3)

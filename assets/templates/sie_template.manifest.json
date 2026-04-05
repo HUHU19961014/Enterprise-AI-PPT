@@ -49,6 +49,18 @@
     "theme_title_pt": 40,
     "directory_title_pt": 24
   },
+  "style_guide": {
+    "title_max_chars": 32,
+    "subtitle_max_chars": 72,
+    "body_max_chars": 120,
+    "preferred_item_counts": [3, 5, 9],
+    "overflow_policy": "paginate",
+    "density_thresholds": {
+      "compact": 60,
+      "balanced": 90,
+      "dense": 120
+    }
+  },
   "render_layouts": {
     "general_business": {
       "origin_left": 576088,

@@ -143,6 +143,13 @@ class BodyPageSpec:
     nav_title: str = ""
     reference_style_id: str | None = None
     payload: BodyPagePayload = field(default_factory=dict)
+    layout_variant: str | None = None
+    content_count: int = 0
+    is_continuation: bool = False
+    continuation_index: int | None = None
+    slide_role: str | None = None
+    layout_hints: dict[str, object] = field(default_factory=dict)
+    source_item_range: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)

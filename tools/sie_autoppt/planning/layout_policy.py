@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from .content_profiler import ContentProfile
+
+
+@dataclass(frozen=True)
+class LayoutDecision:
+    pattern_id: str
+    layout_variant: str | None
+    max_items_per_page: int
+    layout_hints: dict[str, object] = field(default_factory=dict)
+
+
+DEFAULT_ITEM_COUNTS = (3, 5, 9)
+
+
+_LAYOUT_VARIANT_PATTERNS = {
+    "general_business",
+    "process_flow",
+    "org_governance",
+}
+
+
+def choose_capacity(content_profile: ContentProfile, preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS) -> int:
+    counts = tuple(sorted(preferred_item_counts or DEFAULT_ITEM_COUNTS))
+    if content_profile.item_count <= counts[0]:
+        capacity = counts[0]
+    elif content_profile.item_count <= counts[1]:
+        capacity = counts[1]
+    else:
+        capacity = counts[-1]
+
+    if content_profile.density == "dense" or content_profile.has_long_item:
+        if capacity >= counts[-1] and len(counts) >= 2:
+            capacity = counts[1]
+        elif capacity >= counts[1]:
+            capacity = counts[0]
+    return capacity
+
+
+def decide_layout_variant(pattern_id: str, capacity: int) -> str | None:
+    if pattern_id not in _LAYOUT_VARIANT_PATTERNS:
+        return None
+    return f"{pattern_id}_{capacity}"
+
+
+def resolve_layout_decision(
+    *,
+    requested_pattern_id: str,
+    fallback_pattern_id: str,
+    content_profile: ContentProfile,
+    preferred_item_counts: tuple[int, ...] = DEFAULT_ITEM_COUNTS,
+) -> LayoutDecision:
+    pattern_id = requested_pattern_id or fallback_pattern_id
+    capacity = choose_capacity(content_profile, preferred_item_counts=preferred_item_counts)
+    return LayoutDecision(
+        pattern_id=pattern_id,
+        layout_variant=decide_layout_variant(pattern_id, capacity),
+        max_items_per_page=capacity,
+        layout_hints={
+            "density": content_profile.density,
+            "item_count": content_profile.item_count,
+            "avg_chars": content_profile.avg_chars,
+            "max_chars": content_profile.max_chars,
+        },
+    )

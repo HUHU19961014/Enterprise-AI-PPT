@@ -145,6 +145,30 @@ class TemplateFonts:
 
 
 @dataclass(frozen=True)
+class TemplateStyleGuide:
+    title_max_chars: int = 32
+    subtitle_max_chars: int = 72
+    body_max_chars: int = 120
+    preferred_item_counts: tuple[int, ...] = ()
+    overflow_policy: str = "paginate"
+    density_thresholds: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "TemplateStyleGuide":
+        return cls(
+            title_max_chars=int(data.get("title_max_chars", 32)),
+            subtitle_max_chars=int(data.get("subtitle_max_chars", 72)),
+            body_max_chars=int(data.get("body_max_chars", 120)),
+            preferred_item_counts=tuple(int(item) for item in data.get("preferred_item_counts", [])),
+            overflow_policy=str(data.get("overflow_policy", "paginate")),
+            density_thresholds={
+                str(key): int(value)
+                for key, value in dict(data.get("density_thresholds", {})).items()
+            },
+        )
+
+
+@dataclass(frozen=True)
 class TemplateManifest:
     manifest_path: str
     version: str
@@ -153,6 +177,7 @@ class TemplateManifest:
     selectors: TemplateSelectors
     fallback_boxes: TemplateFallbackBoxes
     fonts: TemplateFonts
+    style_guide: TemplateStyleGuide = field(default_factory=TemplateStyleGuide)
     slide_pools: SlidePools | None = None
     render_layouts: dict[str, dict[str, object]] = field(default_factory=dict)
 
@@ -233,6 +258,7 @@ def _load_template_manifest_cached(manifest_path_str: str) -> TemplateManifest:
         selectors=TemplateSelectors.from_dict(data["selectors"]),
         fallback_boxes=TemplateFallbackBoxes.from_dict(data["fallback_boxes"]),
         fonts=TemplateFonts.from_dict(data["fonts"]),
+        style_guide=TemplateStyleGuide.from_dict(data.get("style_guide", {})),
         slide_pools=SlidePools.from_dict(data["slide_pools"]) if data.get("slide_pools") else None,
         render_layouts=_normalize_render_layouts(data.get("render_layouts", {})),
     )
