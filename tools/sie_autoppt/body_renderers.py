@@ -126,6 +126,16 @@ def _layout(manifest: TemplateManifest, name: str) -> dict[str, object]:
     return _wrap_manifest_value(manifest.render_layout(name), f"render_layouts.{name}")
 
 
+def _resolve_layout_name(manifest: TemplateManifest, page: BodyPageSpec, default_name: str) -> str:
+    if page.layout_variant and page.layout_variant in manifest.render_layouts:
+        return page.layout_variant
+    return default_name
+
+
+def _layout_for_page(manifest: TemplateManifest, page: BodyPageSpec, default_name: str) -> dict[str, object]:
+    return _layout(manifest, _resolve_layout_name(manifest, page, default_name))
+
+
 def _extract_system_tags(bullets: list[str]) -> list[str]:
     systems = []
     for bullet in bullets:
@@ -217,7 +227,7 @@ def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
 
 
 def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
-    spec = _layout(manifest, "general_business")
+    spec = _layout_for_page(manifest, page, "general_business")
     x0 = int(spec["origin_left"])
     y0 = int(spec["origin_top"])
     card_w = int(spec["card_width"])
@@ -229,8 +239,9 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
     line_rgb = _rgb(spec["line_rgb"])
     wrap_chars = int(spec["wrap_chars"])
     base_font_pt = int(spec["base_font_pt"])
+    max_items = int(spec.get("max_items", 4))
 
-    for i, text in enumerate(page.bullets[:4]):
+    for i, text in enumerate(page.bullets[:max_items]):
         row, col = divmod(i, 2)
         left = x0 + col * (card_w + gap_x)
         top = y0 + row * (card_h + gap_y)
@@ -252,7 +263,7 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
 
 
 def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
-    spec = _layout(manifest, "process_flow")
+    spec = _layout_for_page(manifest, page, "process_flow")
     start_x = int(spec["origin_left"])
     y = int(spec["origin_top"])
     step_w = int(spec["step_width"])
@@ -333,10 +344,12 @@ def _render_architecture_layers(slide, page: BodyPageSpec, manifest: TemplateMan
 
     layer_items = list(page.payload.get("layers", []))
     if layer_items:
-        layer_texts = [f"{item.get('title', '')}：{item.get('detail', '')}".strip("：") for item in layer_items[:4]]
-        layer_labels = [str(item.get("label", f"L{i + 1:02d}")) for i, item in enumerate(layer_items[:4])]
+        max_layers = int(spec.get("max_items", 4))
+        layer_texts = [f"{item.get('title', '')}：{item.get('detail', '')}".strip("：") for item in layer_items[:max_layers]]
+        layer_labels = [str(item.get("label", f"L{i + 1:02d}")) for i, item in enumerate(layer_items[:max_layers])]
     else:
-        layer_texts = page.bullets[:4]
+        max_layers = int(spec.get("max_items", 4))
+        layer_texts = page.bullets[:max_layers]
         layer_labels = [f"L{i + 1:02d}" for i in range(len(layer_texts))]
 
     for i, text in enumerate(layer_texts):
@@ -440,7 +453,7 @@ def _render_architecture_layers(slide, page: BodyPageSpec, manifest: TemplateMan
 
 
 def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifest):
-    spec = _layout(manifest, "org_governance")
+    spec = _layout_for_page(manifest, page, "org_governance")
     grid = spec["grid"]
     label_box = spec["label_box"]
     label_text = spec["label_text"]
@@ -449,11 +462,13 @@ def _render_governance_grid(slide, page: BodyPageSpec, manifest: TemplateManifes
     cards = list(page.payload.get("cards", []))
     if not cards:
         cards = []
-        for index, text in enumerate(page.bullets[:4], start=1):
+        max_items = int(spec.get("max_items", 4))
+        for index, text in enumerate(page.bullets[:max_items], start=1):
             title, detail = split_title_detail(text)
             cards.append({"label": title or f"{page.payload.get('label_prefix', label_text['label_prefix'])} {index}", "detail": detail})
 
-    for i, card_data in enumerate(cards[:4]):
+    max_cards = int(spec.get("max_items", 4))
+    for i, card_data in enumerate(cards[:max_cards]):
         row, col = divmod(i, 2)
         left = int(grid["left"]) + col * (int(grid["card_width"]) + int(grid["gap_x"]))
         top = int(grid["top"]) + row * (int(grid["card_height"]) + int(grid["gap_y"]))
