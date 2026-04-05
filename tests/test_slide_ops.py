@@ -35,6 +35,11 @@ class SlideOpsTests(unittest.TestCase):
                 self.assertIn("赛意追溯产品亮点", _slide_xml_text(package, 6))
                 self.assertIn("追溯管理", _slide_xml_text(package, 8))
                 self.assertIn("外部追溯推进路径", _slide_xml_text(package, 8))
+                slide4_rels = package.read("ppt/slides/_rels/slide4.xml.rels").decode("utf-8")
+                self.assertIn("../slideLayouts/slideLayout8.xml", slide4_rels)
+                self.assertNotIn("slideLayout7_import1.xml", slide4_rels)
+                imported_master_parts = [name for name in package.namelist() if "slideMaster" in name and "_import" in name]
+                self.assertFalse(imported_master_parts)
                 content_types_root = ElementTree.fromstring(package.read("[Content_Types].xml"))
                 svg_defaults = [
                     child

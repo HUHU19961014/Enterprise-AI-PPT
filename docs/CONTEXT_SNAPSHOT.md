@@ -50,6 +50,7 @@ Compatibility notes:
 - typed payload models
 - manifest `cm` units
 - native reference slide import
+- reference slide import now reuses the target deck layout/master chain to avoid corrupt PPTX output
 - slide metadata name lookup
 - SiliconFlow / OpenAI-compatible provider support
 - external planner command support

@@ -317,17 +317,26 @@ def _build_imported_slide_relationships(
     rel_updates: dict[str, bytes],
     copied_parts: dict[str, str],
     occupied_names: set[str],
+    target_slide_rel_bytes: bytes | None,
 ) -> bytes:
     source_rel_name = _rels_part_name(source_slide_name)
+    target_rel_root = ElementTree.Element(f"{{{PACKAGE_REL_NS}}}Relationships")
+    if target_slide_rel_bytes:
+        existing_target_rel_root = ElementTree.fromstring(target_slide_rel_bytes)
+        for rel in existing_target_rel_root:
+            rel_type = rel.attrib.get("Type", "")
+            if rel_type.endswith("/slideLayout"):
+                target_rel_root.append(deepcopy(rel))
+
     if source_rel_name not in source_package.namelist():
-        empty_root = ElementTree.Element(f"{{{PACKAGE_REL_NS}}}Relationships")
-        return ElementTree.tostring(empty_root, encoding="utf-8", xml_declaration=True)
+        return ElementTree.tostring(target_rel_root, encoding="utf-8", xml_declaration=True)
 
     source_rel_root = ElementTree.fromstring(source_package.read(source_rel_name))
-    target_rel_root = ElementTree.Element(source_rel_root.tag, source_rel_root.attrib)
     for rel in source_rel_root:
         rel_type = rel.attrib.get("Type", "")
         if any(rel_type.endswith(suffix) for suffix in SKIPPED_RELATIONSHIP_SUFFIXES):
+            continue
+        if rel_type.endswith("/slideLayout"):
             continue
         rel_copy = deepcopy(rel)
         target_mode = rel.attrib.get("TargetMode")
@@ -399,6 +408,12 @@ def import_slides_from_presentation(target_pptx: Path, source_pptx: Path, mappin
             if source_slide_name not in source_package.namelist() or target_slide_name not in target_package.namelist():
                 return False
 
+            target_slide_rel_name = _rels_part_name(target_slide_name)
+            target_slide_rel_bytes = (
+                target_package.read(target_slide_rel_name)
+                if target_slide_rel_name in target_package.namelist()
+                else None
+            )
             slide_updates[target_slide_name] = source_package.read(source_slide_name)
             _ensure_content_type_entry(
                 content_types_root,
@@ -423,6 +438,7 @@ def import_slides_from_presentation(target_pptx: Path, source_pptx: Path, mappin
                 rel_updates=rel_updates,
                 copied_parts=copied_parts,
                 occupied_names=occupied_names,
+                target_slide_rel_bytes=target_slide_rel_bytes,
             )
 
         content_types_bytes = ElementTree.tostring(
