@@ -22,9 +22,19 @@ class V2RenderTests(unittest.TestCase):
 
             self.assertTrue(result.output_path.exists())
             self.assertTrue(log_path.exists())
+            self.assertIsNotNone(result.warnings_path)
+            self.assertTrue(result.warnings_path.exists())
 
             prs = Presentation(str(result.output_path))
             self.assertEqual(len(prs.slides), len(validated.deck.slides))
             all_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
             self.assertIn("项目背景", all_text)
             self.assertIn("重构前后对比", all_text)
+
+            warnings_payload = json.loads(result.warnings_path.read_text(encoding="utf-8"))
+            self.assertIn("passed", warnings_payload)
+            self.assertIn("review_required", warnings_payload)
+            self.assertIn("warnings", warnings_payload)
+            self.assertIn("high", warnings_payload)
+            self.assertIn("errors", warnings_payload)
+            self.assertIn("summary", warnings_payload)

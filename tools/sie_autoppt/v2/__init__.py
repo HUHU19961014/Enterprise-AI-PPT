@@ -13,7 +13,16 @@ from .io import (
     write_outline_document,
 )
 from .ppt_engine import RenderArtifacts, generate_ppt
-from .quality_checks import ContentWarning, check_deck_content, check_slide_content
+from .quality_checks import (
+    AutoScoreResult,
+    ContentWarning,
+    QualityGateResult,
+    calculate_auto_score,
+    check_deck_content,
+    check_slide_content,
+    quality_gate,
+    write_quality_gate_result,
+)
 from .schema import (
     DeckDocument,
     OutlineDocument,
@@ -46,6 +55,8 @@ __all__ = [
     "SUPPORTED_LAYOUTS",
     "SUPPORTED_THEMES",
     "ContentWarning",
+    "AutoScoreResult",
+    "QualityGateResult",
     "ThemeMeta",
     "ThemeSpec",
     "V2MakeArtifacts",
@@ -58,6 +69,7 @@ __all__ = [
     "collect_deck_warnings",
     "check_deck_content",
     "check_slide_content",
+    "calculate_auto_score",
     "default_deck_output_path",
     "default_log_output_path",
     "default_outline_output_path",
@@ -70,7 +82,9 @@ __all__ = [
     "load_theme",
     "make_v2_ppt",
     "normalize_deck_payload",
+    "quality_gate",
     "validate_deck_payload",
     "write_deck_document",
     "write_outline_document",
+    "write_quality_gate_result",
 ]

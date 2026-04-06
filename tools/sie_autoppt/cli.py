@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, load_clarifier_session
@@ -73,7 +74,7 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
         "v2-outline",
         "v2-plan",
         "v2-make",
-    }
+    } or bool(getattr(args, "full_pipeline", False))
 
     if uses_ai_range and not is_ai_command:
         parser.error("--min-slides and --max-slides are only supported for ai-plan, ai-make, and ai-check.")
@@ -146,6 +147,11 @@ def main():
     )
     parser.add_argument("--output-name", default=DEFAULT_OUTPUT_PREFIX, help="Output filename prefix.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory used for generated artifacts.")
+    parser.add_argument(
+        "--full-pipeline",
+        action="store_true",
+        help="Run the V2 full pipeline (outline -> deck -> quality gate -> PPT render) with standardized output filenames.",
+    )
     parser.add_argument(
         "--chapters",
         type=int,
@@ -249,20 +255,21 @@ def main():
     if args.command == "v2-render":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'v2-render'.")
-        deck = load_deck_document(Path(args.deck_json))
         log_output = Path(args.log_output) if args.log_output else default_log_output_path(v2_output_dir)
         ppt_output = Path(args.ppt_output) if args.ppt_output else default_ppt_output_path(v2_output_dir)
+        deck = json.loads(Path(args.deck_json).read_text(encoding="utf-8"))
         render_result = generate_v2_ppt(
             deck,
             output_path=ppt_output,
             theme_name=args.theme.strip() or None,
             log_path=log_output,
         )
+        print(str(render_result.warnings_path))
         print(str(log_output))
         print(str(render_result.output_path))
         return
 
-    if args.command == "v2-make":
+    if args.command == "v2-make" or args.full_pipeline:
         if not args.topic.strip() and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-make'.")
         result = make_v2_ppt(
@@ -278,14 +285,31 @@ def main():
             output_dir=v2_output_dir,
             output_prefix=args.output_name,
             model=args.llm_model or None,
-            outline_output=Path(args.outline_output) if args.outline_output else None,
-            deck_output=Path(args.plan_output) if args.plan_output else None,
-            log_output=Path(args.log_output) if args.log_output else None,
-            ppt_output=Path(args.ppt_output) if args.ppt_output else None,
+            outline_output=(
+                Path(args.outline_output)
+                if args.outline_output
+                else (default_outline_output_path(v2_output_dir) if args.full_pipeline else None)
+            ),
+            deck_output=(
+                Path(args.plan_output)
+                if args.plan_output
+                else (default_deck_output_path(v2_output_dir) if args.full_pipeline else None)
+            ),
+            log_output=(
+                Path(args.log_output)
+                if args.log_output
+                else (default_log_output_path(v2_output_dir) if args.full_pipeline else None)
+            ),
+            ppt_output=(
+                Path(args.ppt_output)
+                if args.ppt_output
+                else (default_ppt_output_path(v2_output_dir) if args.full_pipeline else None)
+            ),
             outline_path=Path(args.outline_json) if args.outline_json else None,
         )
         print(str(result.outline_path))
         print(str(result.deck_path))
+        print(str(result.warnings_path))
         print(str(result.log_path))
         print(str(result.pptx_path))
         return

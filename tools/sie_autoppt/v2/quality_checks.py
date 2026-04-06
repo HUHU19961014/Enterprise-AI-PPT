@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
 import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from .schema import DeckDocument, TitleContentSlide, TitleImageSlide, TwoColumnsSlide
+from .schema import (
+    DeckDocument,
+    TitleContentSlide,
+    TitleImageSlide,
+    TwoColumnsSlide,
+    ValidatedDeck,
+    validate_deck_payload,
+)
 
 
 WARNING_LEVEL_WARNING = "warning"
@@ -22,6 +32,66 @@ class ContentWarning:
 
     def is_error(self) -> bool:
         return self.warning_level == WARNING_LEVEL_ERROR
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "slide_id": self.slide_id,
+            "level": self.warning_level,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class AutoScoreResult:
+    auto_score: int
+    level: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "auto_score": self.auto_score,
+            "level": self.level,
+        }
+
+
+@dataclass(frozen=True)
+class QualityGateResult:
+    passed: bool
+    review_required: bool
+    warnings: tuple[ContentWarning, ...]
+    high: tuple[ContentWarning, ...]
+    errors: tuple[ContentWarning, ...]
+    validated_deck: ValidatedDeck | None = None
+    auto_score: int = 100
+    auto_level: str = "优秀"
+
+    @property
+    def summary(self) -> dict[str, int]:
+        return {
+            "warning_count": len(self.warnings),
+            "high_count": len(self.high),
+            "error_count": len(self.errors),
+        }
+
+    @property
+    def slide_count(self) -> int:
+        if self.validated_deck is None:
+            return 0
+        return len(self.validated_deck.deck.slides)
+
+    def all_issues(self) -> tuple[ContentWarning, ...]:
+        return self.warnings + self.high + self.errors
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "review_required": self.review_required,
+            "warnings": [issue.to_dict() for issue in self.warnings],
+            "high": [issue.to_dict() for issue in self.high],
+            "errors": [issue.to_dict() for issue in self.errors],
+            "summary": self.summary,
+            "auto_score": self.auto_score,
+            "auto_level": self.auto_level,
+        }
 
 
 def _count_hanzi(text: str) -> int:
@@ -260,3 +330,94 @@ def count_by_level(warnings: list[ContentWarning]) -> dict[str, int]:
     for w in warnings:
         counts[w.warning_level] = counts.get(w.warning_level, 0) + 1
     return counts
+
+
+def calculate_auto_score(
+    warning_count: int,
+    high_count: int,
+    error_count: int,
+) -> AutoScoreResult:
+    score = max(0, 100 - warning_count * 2 - high_count * 5 - error_count * 20)
+    if score >= 90:
+        level = "优秀"
+    elif score >= 75:
+        level = "可用"
+    elif score >= 60:
+        level = "需复核"
+    else:
+        level = "不可用"
+    return AutoScoreResult(auto_score=score, level=level)
+
+
+def _build_quality_gate_result(
+    issues: list[ContentWarning],
+    *,
+    validated_deck: ValidatedDeck | None,
+) -> QualityGateResult:
+    warnings = tuple(issue for issue in issues if issue.warning_level == WARNING_LEVEL_WARNING)
+    high = tuple(issue for issue in issues if issue.warning_level == WARNING_LEVEL_HIGH)
+    errors = tuple(issue for issue in issues if issue.warning_level == WARNING_LEVEL_ERROR)
+
+    if errors:
+        passed = False
+        review_required = False
+    elif high:
+        passed = True
+        review_required = True
+    else:
+        passed = True
+        review_required = False
+
+    auto_score = calculate_auto_score(
+        warning_count=len(warnings),
+        high_count=len(high),
+        error_count=len(errors),
+    )
+    return QualityGateResult(
+        passed=passed,
+        review_required=review_required,
+        warnings=warnings,
+        high=high,
+        errors=errors,
+        validated_deck=validated_deck,
+        auto_score=auto_score.auto_score,
+        auto_level=auto_score.level,
+    )
+
+
+def quality_gate(deck_data: DeckDocument | ValidatedDeck | dict[str, object]) -> QualityGateResult:
+    if isinstance(deck_data, ValidatedDeck):
+        validated = deck_data
+    elif isinstance(deck_data, DeckDocument):
+        validated = ValidatedDeck(deck=deck_data)
+    elif isinstance(deck_data, dict):
+        try:
+            validated = validate_deck_payload(deck_data)
+        except Exception as exc:
+            return _build_quality_gate_result(
+                [
+                    ContentWarning(
+                        slide_id="schema",
+                        warning_level=WARNING_LEVEL_ERROR,
+                        message=str(exc),
+                    )
+                ],
+                validated_deck=None,
+            )
+    else:
+        raise TypeError("deck_data must be a DeckDocument, ValidatedDeck, or JSON object.")
+
+    return _build_quality_gate_result(
+        list(check_deck_content(validated.deck)),
+        validated_deck=validated,
+    )
+
+
+def write_quality_gate_result(result: QualityGateResult, output_path: str | Path) -> Path:
+    target_path = Path(output_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return target_path

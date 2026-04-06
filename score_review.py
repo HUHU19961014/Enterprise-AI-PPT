@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -22,12 +23,31 @@ class ReviewScore:
     rating: str
     conclusion: str
 
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["review_path"] = str(self.review_path)
+        return payload
+
+
+@dataclass(frozen=True)
+class ReviewSummary:
+    average_score: float
+    excellent_ratio: float
+    qualified_ratio: float
+    unqualified_ratio: float
+    lowest_score_case: str
+    lowest_score: int
+    total_reviews: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
 
 def resolve_rating(total_score: int) -> tuple[str, str]:
     if 21 <= total_score <= 25:
         return "优秀", "可直接进入交付或仅需极少量润色。"
     if 16 <= total_score <= 20:
-        return "合格", "可用于内部汇报，建议做少量调整。"
+        return "合格", "可用于内部汇报，建议少量调整。"
     if 11 <= total_score <= 15:
         return "可用初稿", "具备基础可用性，但需要针对性优化。"
     if 6 <= total_score <= 10:
@@ -68,10 +88,26 @@ def discover_review_files(path: Path) -> list[Path]:
         return [path]
     if not path.exists():
         raise FileNotFoundError(f"Path not found: {path}")
-    return sorted(
-        review_path
-        for review_path in path.rglob("review.md")
-        if review_path.name == "review.md"
+    return sorted(review_path for review_path in path.rglob("review.md") if review_path.name == "review.md")
+
+
+def summarize_reviews(reviews: list[ReviewScore]) -> ReviewSummary | None:
+    if not reviews:
+        return None
+
+    excellent_count = sum(1 for item in reviews if item.rating == "优秀")
+    qualified_count = sum(1 for item in reviews if item.rating == "合格")
+    unqualified_count = len(reviews) - excellent_count - qualified_count
+    lowest = min(reviews, key=lambda item: item.total_score)
+
+    return ReviewSummary(
+        average_score=round(sum(item.total_score for item in reviews) / len(reviews), 2),
+        excellent_ratio=round(excellent_count / len(reviews), 4),
+        qualified_ratio=round(qualified_count / len(reviews), 4),
+        unqualified_ratio=round(unqualified_count / len(reviews), 4),
+        lowest_score_case=lowest.review_path.parent.name,
+        lowest_score=lowest.total_score,
+        total_reviews=len(reviews),
     )
 
 

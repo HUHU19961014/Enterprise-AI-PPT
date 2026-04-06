@@ -9,6 +9,7 @@ from tools.sie_autoppt.v2.quality_checks import (
     check_deck_content,
     count_errors,
     count_by_level,
+    quality_gate,
 )
 from tools.sie_autoppt.v2.schema import (
     DeckDocument,
@@ -222,3 +223,34 @@ class TestQualityGate:
         assert counts[WARNING_LEVEL_ERROR] == 0
         assert counts[WARNING_LEVEL_HIGH] == 1
         assert counts[WARNING_LEVEL_WARNING] >= 1  # At least the bullet warning
+
+    def test_quality_gate_requires_review_for_high_only(self):
+        gate_result = quality_gate(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_content",
+                        "title": "测" * 26,
+                        "content": ["test"],
+                    }
+                ],
+            }
+        )
+        assert gate_result.passed is True
+        assert gate_result.review_required is True
+        assert gate_result.summary["high_count"] == 1
+        assert gate_result.summary["error_count"] == 0
+
+    def test_quality_gate_blocks_schema_errors(self):
+        gate_result = quality_gate(
+            {
+                "meta": {"title": "", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [],
+            }
+        )
+        assert gate_result.passed is False
+        assert gate_result.review_required is False
+        assert gate_result.summary["error_count"] == 1
+        assert gate_result.errors[0].slide_id == "schema"

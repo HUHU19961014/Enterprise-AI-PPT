@@ -62,6 +62,7 @@ class V2MakeArtifacts:
     outline_path: Path
     deck_path: Path
     log_path: Path
+    warnings_path: Path
     pptx_path: Path
     deck: DeckDocument
     warnings: tuple[str, ...] = ()
@@ -421,6 +422,7 @@ def make_v2_ppt(
         outline_path=final_outline_output,
         deck_path=final_deck_output,
         log_path=final_log_output,
+        warnings_path=render_result.warnings_path or (final_log_output.parent / "warnings.json"),
         pptx_path=render_result.output_path,
         deck=validated_deck.deck,
         warnings=tuple(collect_deck_warnings(validated_deck.deck)),
