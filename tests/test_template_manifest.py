@@ -35,6 +35,8 @@ class TemplateManifestTests(unittest.TestCase):
         self.assertEqual(manifest.slide_pools.body[-1], 41)
         self.assertEqual(manifest.slide_pools.ending, 46)
         self.assertIn("general_business", manifest.render_layouts)
+        self.assertIn("general_business_3", manifest.render_layouts)
+        self.assertIn("process_flow_9", manifest.render_layouts)
 
     def test_template_path_resolves_to_adjacent_manifest(self):
         self.assertEqual(resolve_template_manifest_path(DEFAULT_TEMPLATE), DEFAULT_TEMPLATE_MANIFEST)

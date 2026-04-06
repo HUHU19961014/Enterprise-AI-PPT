@@ -6,6 +6,7 @@ from pptx.enum.text import PP_ALIGN
 
 from .config import COLOR_ACTIVE, COLOR_INACTIVE
 from .models import BodyPageSpec
+from .style_guide import deep_merge_dict
 from .template_manifest import TemplateManifest
 from .text_ops import add_textbox, write_text
 
@@ -141,7 +142,12 @@ def _resolve_layout_name(manifest: TemplateManifest, page: BodyPageSpec, default
 
 
 def _layout_for_page(manifest: TemplateManifest, page: BodyPageSpec, default_name: str) -> dict[str, object]:
-    return _layout(manifest, _resolve_layout_name(manifest, page, default_name))
+    resolved_name = _resolve_layout_name(manifest, page, default_name)
+    if resolved_name == default_name:
+        return _layout(manifest, default_name)
+
+    merged_layout = deep_merge_dict(manifest.render_layout(default_name), manifest.render_layout(resolved_name))
+    return _wrap_manifest_value(merged_layout, f"render_layouts.{default_name}+{resolved_name}")
 
 
 def _extract_system_tags(bullets: list[str]) -> list[str]:
@@ -242,6 +248,7 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
     y0 = int(spec["origin_top"])
     card_w = int(spec["card_width"])
     card_h = int(spec["card_height"])
+    columns = max(1, int(spec.get("columns", 2)))
     gap_x = int(spec["gap_x"])
     gap_y = int(spec["gap_y"])
     padding = int(spec["textbox_padding"])
@@ -252,7 +259,7 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
     max_items = int(spec.get("max_items", 4))
 
     for i, text in enumerate(page.bullets[:max_items]):
-        row, col = divmod(i, 2)
+        row, col = divmod(i, columns)
         left = x0 + col * (card_w + gap_x)
         top = y0 + row * (card_h + gap_y)
         card = slide.shapes.add_shape(1, left, top, card_w, card_h)
@@ -275,10 +282,12 @@ def _render_cards_2x2(slide, page: BodyPageSpec, manifest: TemplateManifest):
 def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
     spec = _layout_for_page(manifest, page, "process_flow")
     start_x = int(spec["origin_left"])
-    y = int(spec["origin_top"])
+    start_y = int(spec["origin_top"])
     step_w = int(spec["step_width"])
     step_h = int(spec["step_height"])
-    gap = int(spec["gap_x"])
+    columns = max(1, int(spec.get("columns", int(spec.get("max_items", 4)))))
+    gap_x = int(spec["gap_x"])
+    gap_y = int(spec.get("gap_y", 0))
     fill_rgb = _rgb(spec["fill_rgb"])
     line_rgb = _rgb(spec["line_rgb"])
     number_box = spec["number_box"]
@@ -294,15 +303,17 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
             steps.append({"number": f"{index:02d}", "title": title, "detail": detail})
 
     for i, step in enumerate(steps[: int(spec.get("max_items", 4))]):
-        left = start_x + i * (step_w + gap)
-        box = slide.shapes.add_shape(1, left, y, step_w, step_h)
+        row, col = divmod(i, columns)
+        left = start_x + col * (step_w + gap_x)
+        top = start_y + row * (step_h + gap_y)
+        box = slide.shapes.add_shape(1, left, top, step_w, step_h)
         box.fill.solid()
         box.fill.fore_color.rgb = RGBColor(*fill_rgb)
         box.line.color.rgb = RGBColor(*line_rgb)
         add_textbox(
             slide,
             left + int(number_box["left_offset"]),
-            y + int(number_box["top_offset"]),
+            top + int(number_box["top_offset"]),
             int(number_box["width"]),
             int(number_box["height"]),
             str(step.get("number", f"{i + 1:02d}")),
@@ -317,7 +328,7 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
         add_textbox(
             slide,
             left + int(title_box.get("left_offset", default_title_left)),
-            y + int(title_box.get("top_offset", number_box["top_offset"])),
+            top + int(title_box.get("top_offset", number_box["top_offset"])),
             step_w - int(title_box.get("width_padding", detail_box["width_padding"])),
             int(title_box.get("height", 220000)),
             str(step.get("title", "")),
@@ -332,7 +343,7 @@ def _render_process_flow(slide, page: BodyPageSpec, manifest: TemplateManifest):
         add_textbox(
             slide,
             left + int(detail_box["left_offset"]),
-            y + int(detail_box["top_offset"]),
+            top + int(detail_box["top_offset"]),
             step_w - int(detail_box["width_padding"]),
             step_h - int(detail_box["height_padding"]),
             safe_text,
