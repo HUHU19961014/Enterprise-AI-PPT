@@ -31,6 +31,40 @@ class StyleGuideTests(unittest.TestCase):
         self.assertEqual(parsed["density_thresholds"]["dense"], 90)
         self.assertEqual(parsed["tone_keywords"], ["bold", "precise"])
 
+    def test_parse_style_guide_markdown_supports_comments_json_blocks_and_nested_maps(self):
+        content = """
+        # Demo
+
+        accent_hex: #AD053D
+        accent_rgb: [173, 5, 61] # inline note
+        renderer_hints:
+          section_kicker_case: uppercase
+          emphasize_numbers: true
+
+        prompt_summary: |
+          Lead with value.
+          Keep the flow decisive.
+
+        speaking_notes: >
+          One line for the presenter.
+          Second line folds into the same paragraph.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "style_guide.md"
+            path.write_text(content, encoding="utf-8")
+            parsed = parse_style_guide_markdown(path)
+
+        self.assertEqual(parsed["accent_hex"], "#AD053D")
+        self.assertEqual(parsed["accent_rgb"], [173, 5, 61])
+        self.assertEqual(parsed["renderer_hints"]["section_kicker_case"], "uppercase")
+        self.assertTrue(parsed["renderer_hints"]["emphasize_numbers"])
+        self.assertEqual(parsed["prompt_summary"], "Lead with value.\nKeep the flow decisive.")
+        self.assertEqual(
+            parsed["speaking_notes"],
+            "One line for the presenter. Second line folds into the same paragraph.",
+        )
+
     def test_deep_merge_dict_merges_nested_content(self):
         merged = deep_merge_dict(
             {"style_guide": {"body_max_chars": 100, "density_thresholds": {"compact": 60}}},

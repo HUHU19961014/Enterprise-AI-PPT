@@ -231,6 +231,30 @@ Additional template variants:
 
 Each variant now carries its own `manifest.json` and `style_guide.md`. The manifest loader supports folder-level manifests plus `extends`, so new template families can inherit the base pool and only override style-specific settings.
 
+Recommended `style_guide.md` format is a small YAML-like subset:
+
+```md
+theme_name: Executive Gold
+accent_rgb: [168, 126, 33]
+preferred_item_counts: [3, 4, 6]
+renderer_hints:
+  section_kicker_case: uppercase
+prompt_notes:
+- Keep titles boardroom-ready.
+summary: |
+  Multi-line notes stay on separate lines.
+```
+
+Supported patterns now include:
+
+- heading lines such as `# Business Gold`
+- `key: value`
+- JSON-style arrays and objects such as `[168, 126, 33]`
+- `key:` followed by indented nested keys
+- `key:` followed by bullet lists
+- block text with `|` and folded text with `>`
+- inline comments after values, while preserving literal color strings such as `#AD053D`
+
 Reference-style body pages now use native PPTX package merge by default. The bundled reference deck carries slide metadata names, so lookup order is:
 
 1. slide metadata name
@@ -239,6 +263,8 @@ Reference-style body pages now use native PPTX package merge by default. The bun
 
 Templates without `slide_pools` still have a legacy runtime clone path, but it is explicitly deprecated. New templates should migrate to preallocated pools.
 The bundled default template ships with a 20-pair preallocated slide pool, so classic HTML decks are no longer limited to three body pages.
+
+`tools/upgrade_template_pool.py` runs on the Python/OpenXML path and does not require PowerPoint or COM. After every upgrade it validates slide count, ending slide position, and cloned directory-slide assets, so the CLI is not a blind best-effort operation.
 
 ## Testing
 

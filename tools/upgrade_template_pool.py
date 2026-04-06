@@ -17,6 +17,8 @@ from sie_autoppt.slide_ops import clone_slide_after, copy_slide_xml_assets, ensu
 from sie_autoppt.template_manifest import load_template_manifest
 from sie_autoppt.generator import validate_slide_pool_configuration
 
+VALIDATION_MODE = "python-openxml"
+
 
 def upgrade_template_pool(template_path: Path) -> bool:
     manifest = load_template_manifest(template_path=template_path)
@@ -28,7 +30,7 @@ def upgrade_template_pool(template_path: Path) -> bool:
     return changed
 
 
-def validate_template_pool(template_path: Path, manifest=None) -> dict[str, int]:
+def validate_template_pool(template_path: Path, manifest=None) -> dict[str, object]:
     manifest = manifest or load_template_manifest(template_path=template_path)
     if not manifest.slide_pools:
         raise ValueError("Template manifest does not define slide_pools.")
@@ -48,7 +50,20 @@ def validate_template_pool(template_path: Path, manifest=None) -> dict[str, int]
         "slides": len(prs.slides),
         "required_pairs": required_pairs,
         "ending_slide_no": manifest.slide_pools.ending + 1,
+        "directory_asset_targets": len(target_indices),
+        "validation_mode": VALIDATION_MODE,
     }
+
+
+def format_validation_summary(summary: dict[str, object]) -> str:
+    return (
+        "Validation passed: "
+        f"mode={summary['validation_mode']}, "
+        f"slides={summary['slides']}, "
+        f"required_pairs={summary['required_pairs']}, "
+        f"ending_slide_no={summary['ending_slide_no']}, "
+        f"directory_asset_targets={summary['directory_asset_targets']}"
+    )
 
 
 def _upgrade_template_pool_with_python(template_path: Path, manifest) -> bool:
@@ -86,16 +101,29 @@ def _upgrade_template_pool_with_python(template_path: Path, manifest) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Expand the default template into a preallocated slide pool.")
+    parser = argparse.ArgumentParser(
+        description="Expand a template into a preallocated slide pool using the Python/OpenXML path."
+    )
     parser.add_argument("template", nargs="?", default="assets/templates/sie_template.pptx", help="Template PPTX path.")
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Only validate the existing template pool without modifying the PPTX.",
+    )
     args = parser.parse_args()
 
     template_path = Path(args.template).resolve()
-    changed = upgrade_template_pool(template_path)
-    if changed:
-        print(f"Template upgraded: {template_path}")
+    if args.validate_only:
+        print(f"Template validation requested: {template_path}")
     else:
-        print(f"Template already pooled: {template_path}")
+        changed = upgrade_template_pool(template_path)
+        if changed:
+            print(f"Template upgraded: {template_path}")
+        else:
+            print(f"Template already pooled: {template_path}")
+
+    summary = validate_template_pool(template_path)
+    print(format_validation_summary(summary))
 
 
 if __name__ == "__main__":

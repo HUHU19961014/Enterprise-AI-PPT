@@ -1,12 +1,12 @@
 # Minimal Gray
 
 theme_name: Minimal Gray
-accent_rgb: 88, 94, 103
-inactive_rgb: 166, 173, 182
+accent_rgb: [88, 94, 103]
+inactive_rgb: [166, 173, 182]
 title_max_chars: 28
 subtitle_max_chars: 64
 body_max_chars: 110
-preferred_item_counts: 3, 4, 5
+preferred_item_counts: [3, 4, 5]
 overflow_policy: paginate
 density_thresholds.compact: 54
 density_thresholds.balanced: 82

@@ -1,12 +1,12 @@
 # Business Gold
 
 theme_name: Executive Gold
-accent_rgb: 168, 126, 33
-inactive_rgb: 176, 164, 140
+accent_rgb: [168, 126, 33]
+inactive_rgb: [176, 164, 140]
 title_max_chars: 30
 subtitle_max_chars: 68
 body_max_chars: 118
-preferred_item_counts: 3, 4, 6
+preferred_item_counts: [3, 4, 6]
 overflow_policy: paginate
 density_thresholds.compact: 58
 density_thresholds.balanced: 86
