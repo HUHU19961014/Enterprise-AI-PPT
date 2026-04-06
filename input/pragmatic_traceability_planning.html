@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>务实版 - 追溯系统现状与规划</title>
+<style>
+  :root {
+    --sie-wine: #8A1538;
+    --text-main: #333333;
+    --text-muted: #666666;
+    --bg-gray: #F5F7FA;
+    --dark-gray: #4A4A4A;
+    --border-color: #E0E0E0;
+  }
+  body {
+    font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #EFEFEF;
+    color: var(--text-main);
+  }
+  .slide-container {
+    width: 1200px;
+    height: 675px;
+    background: white;
+    margin: 0 auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    padding: 30px 40px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .header {
+    margin-bottom: 25px;
+    border-bottom: 2px solid var(--sie-wine);
+    padding-bottom: 12px;
+  }
+  .header h1 {
+    font-size: 24px;
+    margin: 0 0 8px 0;
+    color: var(--text-main);
+    line-height: 1.4;
+  }
+  .header h1 span.highlight {
+    color: var(--sie-wine);
+    font-weight: bold;
+  }
+  .content {
+    display: flex;
+    gap: 30px;
+    flex: 1;
+  }
+  .matrix-area {
+    flex: 5.5;
+    display: flex;
+    flex-direction: column;
+  }
+  .matrix-container {
+    flex: 1;
+    position: relative;
+    margin: 15px 15px 30px 35px;
+    border-left: 2px solid var(--dark-gray);
+    border-bottom: 2px solid var(--dark-gray);
+    background: var(--bg-gray);
+  }
+  .y-axis-label {
+    position: absolute;
+    left: -35px;
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg);
+    font-weight: bold;
+    color: var(--text-muted);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .x-axis-label {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-weight: bold;
+    color: var(--text-muted);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .quadrant {
+    position: absolute;
+    width: 50%;
+    height: 50%;
+    box-sizing: border-box;
+  }
+  .q-tl { top: 0; left: 0; border-right: 1px dashed #ccc; border-bottom: 1px dashed #ccc; }
+  .q-tr { top: 0; left: 50%; border-bottom: 1px dashed #ccc; background: rgba(138,21,56,0.04); }
+  .q-bl { top: 50%; left: 0; border-right: 1px dashed #ccc; }
+  .q-br { top: 50%; left: 50%; }
+
+  .q-label {
+    position: absolute;
+    padding: 10px;
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .q-tr .q-label { top: 5px; right: 10px; color: var(--sie-wine); text-align: right; }
+  .q-bl .q-label { bottom: 5px; left: 10px; color: var(--text-muted); }
+
+  .point {
+    position: absolute;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .point-label {
+    position: absolute;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .pt-yingfa {
+    width: 20px; height: 20px;
+    background-color: var(--dark-gray);
+    left: 35%; top: 60%;
+    border: 2px solid white;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 10;
+  }
+  .pt-yingfa .point-label { top: -25px; color: var(--text-main); font-size: 15px; left: -10px;}
+
+  .pt-top { width: 14px; height: 14px; background-color: var(--sie-wine); }
+  .pt-top.trina { left: 85%; top: 20%; }
+  .pt-top.trina .point-label { right: 20px; top: -3px; color: var(--sie-wine); }
+  .pt-top.ja { left: 80%; top: 25%; }
+  .pt-top.ja .point-label { left: 20px; top: -3px; color: var(--sie-wine); }
+  .pt-top.jinko { left: 75%; top: 30%; }
+  .pt-top.jinko .point-label { bottom: 20px; left: -5px; color: var(--sie-wine); }
+
+  .pt-gray { width: 10px; height: 10px; background-color: #d0d0d0; }
+  .pt-gray.yidao { left: 45%; top: 55%; }
+  .pt-gray.hengdian { left: 48%; top: 60%; }
+
+  .chasm {
+    position: absolute;
+    top: 15%; left: 20%; width: 150%; height: 1px;
+    border-top: 2px dashed #bbb;
+    transform: rotate(45deg); transform-origin: 0 0;
+  }
+  .chasm-label {
+    position: absolute;
+    left: 55%; top: 48%; transform: rotate(-45deg);
+    color: var(--text-muted); font-weight: bold; font-size: 14px;
+    background: var(--bg-gray); padding: 0 5px;
+  }
+
+  .arrow {
+    position: absolute;
+    left: 38%; top: 57%; width: 180px; height: 4px;
+    background-color: var(--sie-wine);
+    transform: rotate(-35deg); transform-origin: 0 50%; z-index: 5;
+  }
+  .arrow::after {
+    content: ''; position: absolute; right: -2px; top: -6px;
+    border-left: 14px solid var(--sie-wine); border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+  }
+  .arrow-label {
+    position: absolute; top: -25px; left: 20px;
+    color: var(--sie-wine); font-weight: bold; font-size: 13px;
+    background: white; padding: 2px 6px; border: 1px solid var(--sie-wine); border-radius: 2px;
+  }
+
+  .insight-area {
+    flex: 4.5;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .text-block {
+    margin-bottom: 15px;
+  }
+  .text-block-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .text-block-title::before {
+    content: ''; display: inline-block; width: 4px; height: 16px; background: var(--sie-wine); margin-right: 8px;
+  }
+  .text-block-title.gray::before { background: var(--dark-gray); }
+
+  .text-list {
+    list-style: none; padding: 0; margin: 0;
+  }
+  .text-list li {
+    font-size: 14px; line-height: 1.5; margin-bottom: 10px; padding-left: 14px; position: relative; color: var(--text-muted);
+  }
+  .text-list li::before {
+    content: '•'; position: absolute; left: 0; top: 0; color: var(--text-main); font-size: 14px; font-weight: bold;
+  }
+  .text-list strong {
+    color: var(--text-main);
+  }
+
+  .value-box {
+    background: var(--sie-wine);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 4px;
+    margin-top: 10px;
+  }
+  .value-box-title {
+    margin: 0 0 10px 0; font-size: 16px; font-weight: bold;
+    border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 8px;
+  }
+  .value-list {
+    list-style: none; padding: 0; margin: 0;
+  }
+  .value-list li {
+    font-size: 14px; line-height: 1.6; margin-bottom: 6px; padding-left: 15px; position: relative;
+  }
+  .value-list li::before {
+    content: '✓'; position: absolute; left: 0; top: 0; color: #FFF; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="slide-container">
+  <div class="header">
+    <h1>差距与规划：头部企业已跑通<span class="highlight">系统化追溯</span>，英发亟需用数字化补齐短板</h1>
+  </div>
+
+  <div class="content">
+    <div class="matrix-area">
+      <div class="matrix-container">
+        <div class="y-axis-label">客户审核严苛度与合规要求 (高 →)</div>
+        <div class="x-axis-label">企业追溯系统完善度 (强 →)</div>
+
+        <div class="quadrant q-tl"></div>
+        <div class="quadrant q-tr"><div class="q-label">系统化阶段<br><span style="font-size:12px;font-weight:normal;color:var(--text-muted);">靠系统固化规则，不依赖人工</span></div></div>
+        <div class="quadrant q-bl"><div class="q-label">手工/半手工阶段<br><span style="font-size:12px;font-weight:normal;color:var(--text-muted);">设专职部门，靠线下对账与填表</span></div></div>
+        <div class="quadrant q-br"></div>
+
+        <div class="chasm"></div>
+        <div class="chasm-label">数字化分水岭</div>
+
+        <div class="arrow">
+          <div class="arrow-label">建设公司级追溯系统</div>
+        </div>
+
+        <div class="point pt-yingfa"><div class="point-label">英发睿能</div></div>
+        <div class="point pt-top trina"><div class="point-label">天合光能</div></div>
+        <div class="point pt-top ja"><div class="point-label">晶澳科技</div></div>
+        <div class="point pt-top jinko"><div class="point-label">晶科能源</div></div>
+
+        <div class="point pt-gray yidao"><div class="point-label" style="color:#999; font-size:12px; right:-60px;">一道新能</div></div>
+        <div class="point pt-gray hengdian"><div class="point-label" style="color:#999; font-size:12px; right:-60px;">横店东磁</div></div>
+      </div>
+    </div>
+
+    <div class="insight-area">
+
+      <div class="text-block">
+        <div class="text-block-title">对标头部：业务规则已被IT系统固化</div>
+        <ul class="text-list">
+          <li><strong>系统自动打通：</strong>从ERP/MES等直接抓取数据，系统自动关联硅料到组件的上下游BOM。</li>
+          <li><strong>事前风控拦截：</strong>将客户审核标准预设在系统里，不合规的物料或数据在生产端直接报警拦截。</li>
+        </ul>
+      </div>
+
+      <div class="text-block">
+        <div class="text-block-title gray">反观现状：追溯部门面临的“无系统”痛点</div>
+        <ul class="text-list">
+          <li><strong>数据散落难收集：</strong>业务数据散在各处，追溯部门天天找别的部门“要数据”、“对台账”，协同成本极高。</li>
+          <li><strong>人工填表风险大：</strong>出具溯源报告严重依赖人工拼接Excel，耗时费力，面对海外突击审查时极易出错或断档。</li>
+        </ul>
+      </div>
+
+      <div class="value-box">
+        <div class="value-box-title">系统上线带来的直接业务收益</div>
+        <ul class="value-list">
+          <li><strong>对内提效：</strong>把追溯部门从机械的Excel搬运中解放出来，用系统“秒出”报告，提升应审效率。</li>
+          <li><strong>对客增信：</strong>用系统生成的、不可篡改的数据链，用“硬数据”打消海外大客户疑虑。</li>
+          <li><strong>产品溢价：</strong>把完善的“产品数字化履历”作为销售敲门砖，提升在同质化市场中的拿单竞争力。</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
