@@ -44,7 +44,7 @@ class V2CliTests(unittest.TestCase):
             self.assertIn("generated_outline.json", output)
             self.assertIn("generated_deck.json", output)
 
-    def test_v2_make_prints_five_artifact_paths(self):
+    def test_v2_make_prints_six_artifact_paths(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
@@ -57,6 +57,7 @@ class V2CliTests(unittest.TestCase):
                         {
                             "outline_path": Path(temp_dir) / "deck.outline.json",
                             "deck_path": Path(temp_dir) / "deck.deck.v2.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
                             "warnings_path": Path(temp_dir) / "warnings.json",
                             "log_path": Path(temp_dir) / "deck.log.txt",
                             "pptx_path": Path(temp_dir) / "deck.pptx",
@@ -68,12 +69,13 @@ class V2CliTests(unittest.TestCase):
                 cli.main()
 
             lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
-            self.assertEqual(len(lines), 5)
+            self.assertEqual(len(lines), 6)
             self.assertTrue(lines[0].endswith(".outline.json"))
             self.assertTrue(lines[1].endswith(".deck.v2.json"))
-            self.assertTrue(lines[2].endswith("warnings.json"))
-            self.assertTrue(lines[3].endswith(".log.txt"))
-            self.assertTrue(lines[4].endswith(".pptx"))
+            self.assertTrue(lines[2].endswith("rewrite_log.json"))
+            self.assertTrue(lines[3].endswith("warnings.json"))
+            self.assertTrue(lines[4].endswith(".log.txt"))
+            self.assertTrue(lines[5].endswith(".pptx"))
 
     def test_full_pipeline_uses_standardized_v2_output_names(self):
         stdout = io.StringIO()
@@ -88,6 +90,7 @@ class V2CliTests(unittest.TestCase):
                         {
                             "outline_path": Path(temp_dir) / "generated_outline.json",
                             "deck_path": Path(temp_dir) / "generated_deck.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
                             "warnings_path": Path(temp_dir) / "warnings.json",
                             "log_path": Path(temp_dir) / "log.txt",
                             "pptx_path": Path(temp_dir) / "generated.pptx",
@@ -107,6 +110,7 @@ class V2CliTests(unittest.TestCase):
             lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
             self.assertEqual(lines[0], str(Path(temp_dir) / "generated_outline.json"))
             self.assertEqual(lines[1], str(Path(temp_dir) / "generated_deck.json"))
-            self.assertEqual(lines[2], str(Path(temp_dir) / "warnings.json"))
-            self.assertEqual(lines[3], str(Path(temp_dir) / "log.txt"))
-            self.assertEqual(lines[4], str(Path(temp_dir) / "generated.pptx"))
+            self.assertEqual(lines[2], str(Path(temp_dir) / "rewrite_log.json"))
+            self.assertEqual(lines[3], str(Path(temp_dir) / "warnings.json"))
+            self.assertEqual(lines[4], str(Path(temp_dir) / "log.txt"))
+            self.assertEqual(lines[5], str(Path(temp_dir) / "generated.pptx"))

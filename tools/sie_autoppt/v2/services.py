@@ -19,7 +19,6 @@ from .io import (
     default_outline_output_path,
     default_ppt_output_path,
     load_outline_document,
-    write_deck_document,
     write_outline_document,
 )
 from .ppt_engine import generate_ppt
@@ -62,6 +61,7 @@ class V2MakeArtifacts:
     outline_path: Path
     deck_path: Path
     log_path: Path
+    rewrite_log_path: Path
     warnings_path: Path
     pptx_path: Path
     deck: DeckDocument
@@ -408,7 +408,6 @@ def make_v2_ppt(
         model=model,
     )
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
-    write_deck_document(validated_deck.deck, final_deck_output)
 
     final_log_output = log_output or default_log_output_path(final_output_dir)
     final_ppt_output = ppt_output or default_ppt_output_path(final_output_dir)
@@ -417,13 +416,15 @@ def make_v2_ppt(
         output_path=final_ppt_output,
         theme_name=theme,
         log_path=final_log_output,
+        deck_output_path=final_deck_output,
     )
     return V2MakeArtifacts(
         outline_path=final_outline_output,
-        deck_path=final_deck_output,
+        deck_path=render_result.deck_path or final_deck_output,
         log_path=final_log_output,
+        rewrite_log_path=render_result.rewrite_log_path or (final_log_output.parent / "rewrite_log.json"),
         warnings_path=render_result.warnings_path or (final_log_output.parent / "warnings.json"),
         pptx_path=render_result.output_path,
-        deck=validated_deck.deck,
-        warnings=tuple(collect_deck_warnings(validated_deck.deck)),
+        deck=render_result.final_deck,
+        warnings=tuple(collect_deck_warnings(render_result.final_deck)),
     )

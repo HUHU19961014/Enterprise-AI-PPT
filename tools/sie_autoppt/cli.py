@@ -264,6 +264,7 @@ def main():
             theme_name=args.theme.strip() or None,
             log_path=log_output,
         )
+        print(str(render_result.rewrite_log_path))
         print(str(render_result.warnings_path))
         print(str(log_output))
         print(str(render_result.output_path))
@@ -309,6 +310,7 @@ def main():
         )
         print(str(result.outline_path))
         print(str(result.deck_path))
+        print(str(result.rewrite_log_path))
         print(str(result.warnings_path))
         print(str(result.log_path))
         print(str(result.pptx_path))

@@ -6,10 +6,11 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches
 
-from .io import RenderLog
+from .content_rewriter import rewrite_deck, write_rewrite_log
+from .io import RenderLog, write_deck_document
 from .layout_router import render_slide
 from .quality_checks import ContentWarning, QualityGateResult, quality_gate, write_quality_gate_result
-from .schema import DeckDocument, ValidatedDeck, validate_deck_payload
+from .schema import DeckDocument, ValidatedDeck
 from .theme_loader import load_theme
 
 
@@ -18,8 +19,11 @@ class RenderArtifacts:
     output_path: Path
     log_path: Path | None
     warnings_path: Path | None
+    rewrite_log_path: Path | None
+    deck_path: Path | None
     slide_count: int
     quality_gate: QualityGateResult
+    final_deck: DeckDocument
     warnings: tuple[str, ...] = ()
     content_warnings: tuple[ContentWarning, ...] = ()
     warning_count: int = 0
@@ -28,23 +32,14 @@ class RenderArtifacts:
     review_required: bool = False
     auto_score: int = 100
     auto_level: str = "优秀"
-
-
-def _coerce_validated_deck(deck_data: DeckDocument | ValidatedDeck | dict[str, object]) -> ValidatedDeck:
-    if isinstance(deck_data, ValidatedDeck):
-        return deck_data
-    if isinstance(deck_data, DeckDocument):
-        return ValidatedDeck(deck=deck_data)
-    if isinstance(deck_data, dict):
-        return validate_deck_payload(deck_data)
-    raise TypeError("deck_data must be a DeckDocument, ValidatedDeck, or JSON object.")
-
-
+    rewrite_applied: bool = False
 def generate_ppt(
     deck_data: DeckDocument | ValidatedDeck | dict[str, object],
     output_path: str | Path,
     theme_name: str | None = None,
     log_path: str | Path | None = None,
+    deck_output_path: str | Path | None = None,
+    rewrite_log_path: str | Path | None = None,
     max_errors: int = 0,
 ) -> RenderArtifacts:
     """
@@ -55,6 +50,8 @@ def generate_ppt(
         output_path: Path where the PPTX file will be saved
         theme_name: Optional theme name override
         log_path: Optional path to write the generation log
+        deck_output_path: Optional path to write the validated or rewritten deck JSON
+        rewrite_log_path: Optional path to write rewrite decisions
         max_errors: Maximum number of error-level quality issues allowed (default: 0)
                    If error count exceeds this threshold, generation will be aborted.
 
@@ -65,8 +62,16 @@ def generate_ppt(
         ValueError: If error count exceeds max_errors threshold
     """
     log = RenderLog()
-    quality_result = quality_gate(deck_data)
     warnings_json_path = (Path(log_path).parent / "warnings.json") if log_path else (Path(output_path).parent / "warnings.json")
+    final_rewrite_log_path = Path(rewrite_log_path) if rewrite_log_path else (
+        (Path(log_path).parent / "rewrite_log.json") if log_path else (Path(output_path).parent / "rewrite_log.json")
+    )
+    final_deck_path = Path(deck_output_path) if deck_output_path else None
+
+    quality_result = quality_gate(deck_data)
+    rewrite_result = rewrite_deck(quality_result.validated_deck, quality_result)
+    write_rewrite_log(rewrite_result, final_rewrite_log_path)
+    quality_result = rewrite_result.final_quality_gate
     write_quality_gate_result(quality_result, warnings_json_path)
 
     validated = quality_result.validated_deck
@@ -81,11 +86,15 @@ def generate_ppt(
         raise ValueError(error_msg)
 
     deck = validated.deck
-    theme = load_theme(theme_name or deck.meta.theme)
+    if final_deck_path is not None:
+        write_deck_document(deck, final_deck_path)
 
+    theme = load_theme(theme_name or deck.meta.theme)
     log.info(f"deck title: {deck.meta.title}")
     log.info(f"theme: {theme.theme_name}")
     log.extend(validated.warnings)
+    if rewrite_result.applied:
+        log.info(f"content rewrite applied: {len(rewrite_result.actions)} change(s)")
 
     content_warnings = quality_result.all_issues()
     for warning in content_warnings:
@@ -103,7 +112,6 @@ def generate_ppt(
             log.write(final_log_path)
         raise ValueError(error_msg)
 
-    # Generate presentation
     prs = Presentation()
     prs.slide_width = Inches(theme.page.width)
     prs.slide_height = Inches(theme.page.height)
@@ -123,8 +131,11 @@ def generate_ppt(
         output_path=final_output,
         log_path=final_log_path,
         warnings_path=warnings_json_path,
+        rewrite_log_path=final_rewrite_log_path,
+        deck_path=final_deck_path,
         slide_count=len(deck.slides),
         quality_gate=quality_result,
+        final_deck=deck,
         warnings=tuple(validated.warnings),
         content_warnings=content_warnings,
         warning_count=quality_result.summary["warning_count"],
@@ -133,4 +144,5 @@ def generate_ppt(
         review_required=quality_result.review_required,
         auto_score=quality_result.auto_score,
         auto_level=quality_result.auto_level,
+        rewrite_applied=rewrite_result.applied,
     )

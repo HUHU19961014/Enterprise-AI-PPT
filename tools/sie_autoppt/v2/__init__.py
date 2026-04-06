@@ -12,6 +12,7 @@ from .io import (
     write_deck_document,
     write_outline_document,
 )
+from .content_rewriter import RewriteAction, RewriteDeckResult, rewrite_deck, rewrite_slide, write_rewrite_log
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import (
     AutoScoreResult,
@@ -52,6 +53,8 @@ __all__ = [
     "OutlineGenerationRequest",
     "OutlineItem",
     "RenderArtifacts",
+    "RewriteAction",
+    "RewriteDeckResult",
     "SUPPORTED_LAYOUTS",
     "SUPPORTED_THEMES",
     "ContentWarning",
@@ -83,8 +86,11 @@ __all__ = [
     "make_v2_ppt",
     "normalize_deck_payload",
     "quality_gate",
+    "rewrite_deck",
+    "rewrite_slide",
     "validate_deck_payload",
     "write_deck_document",
     "write_outline_document",
     "write_quality_gate_result",
+    "write_rewrite_log",
 ]
