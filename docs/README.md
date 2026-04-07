@@ -11,6 +11,7 @@ Historical reviews, migration notes, and one-off delivery reports live under `do
 - [Input spec supplement](./INPUT_SPEC_SUPPLEMENT.md)
 - [Testing](./TESTING.md)
 - [Human visual QA](./HUMAN_VISUAL_QA.md)
+- [PPT workflow](./PPT_WORKFLOW.md)
 - [LLM compatibility](./LLM_COMPATIBILITY.md)
 - [Compatibility policy](./COMPATIBILITY.md)
 - [Reference style library](./REFERENCE_STYLE_LIBRARY.md)
