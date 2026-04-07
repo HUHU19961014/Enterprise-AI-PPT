@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 if (-not $Template) { $Template = Join-Path $ProjectRoot "assets\templates\sie_template.pptx" }
 if (-not $VersionFile) { $VersionFile = Join-Path $ProjectRoot "assets\templates\sie_template.version.txt" }

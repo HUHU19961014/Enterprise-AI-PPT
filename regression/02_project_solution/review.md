@@ -55,7 +55,7 @@
 - 样例名称：02_project_solution
 - 评审人：Claude (AI Reviewer)
 - 评审日期：2026-04-06
-- 渲染文件：output/regression/02_project_solution/generated.pptx
+- 渲染文件：output/v2_regression/02_project_solution/generated.pptx
 
 ## 评分项
 

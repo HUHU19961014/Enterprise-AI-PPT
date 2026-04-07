@@ -5,7 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from tools.build_sie_key_capabilities_slide import build_slide, self_check_layout
+from tools.scenario_generators.build_sie_key_capabilities_slide import build_slide, self_check_layout
 
 
 class SieKeyCapabilitiesSlideTests(unittest.TestCase):

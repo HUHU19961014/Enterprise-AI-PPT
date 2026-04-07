@@ -55,7 +55,7 @@
 - 样例名称：04_industry_analysis
 - 评审人：Claude (AI Reviewer)
 - 评审日期：2026-04-06
-- 渲染文件：output/regression/04_industry_analysis/generated.pptx
+- 渲染文件：output/v2_regression/04_industry_analysis/generated.pptx
 
 ## 评分项
 

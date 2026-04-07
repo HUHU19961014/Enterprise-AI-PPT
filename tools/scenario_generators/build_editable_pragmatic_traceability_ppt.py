@@ -14,8 +14,8 @@ from pptx.enum.text import MSO_AUTO_SIZE, MSO_VERTICAL_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_HTML = PROJECT_ROOT / "input" / "pragmatic_traceability_planning.html"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_HTML = PROJECT_ROOT / "samples" / "input" / "pragmatic_traceability_planning.html"
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "pragmatic_traceability_planning_editable.pptx"
 DEFAULT_SLIDE_WIDTH = Inches(13.333333)
 DEFAULT_SLIDE_HEIGHT = Inches(7.5)

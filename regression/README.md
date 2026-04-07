@@ -14,3 +14,9 @@ Suggested execution flow:
 1. Generate or adjust `outline.json` from `input.md`
 2. Generate or adjust `deck.json` from `outline.json`
 3. Render PPT and review against `review.md`
+
+Recommended runner:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
+```

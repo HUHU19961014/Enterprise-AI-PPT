@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pptx import Presentation
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 template = project_root / "assets" / "templates" / "sie_template.pptx"
 prs = Presentation(str(template))
 

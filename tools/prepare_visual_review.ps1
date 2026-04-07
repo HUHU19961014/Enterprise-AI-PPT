@@ -8,79 +8,20 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 if (-not $Template) { $Template = Join-Path $ProjectRoot "assets\templates\sie_template.pptx" }
-if (-not $ReferenceBody) { $ReferenceBody = Join-Path $ProjectRoot "input\reference_body_style.pptx" }
+if (-not $ReferenceBody) { $ReferenceBody = Join-Path $ProjectRoot "samples\input\reference_body_style.pptx" }
 if (-not $OutputRoot) { $OutputRoot = Join-Path $ProjectRoot "projects\visual_review" }
+$registryPath = Join-Path $ProjectRoot "samples\visual_review_cases.json"
 
-$scriptPath = Join-Path $ProjectRoot "tools\sie_autoppt_cli.py"
+$scriptPath = Join-Path $ProjectRoot "main.py"
 if (-not (Test-Path $Template)) { throw "Template not found: $Template" }
 if (-not (Test-Path $scriptPath)) { throw "Generator script not found: $scriptPath" }
+if (-not (Test-Path $registryPath)) { throw "Visual review registry not found: $registryPath" }
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $reviewDir = Join-Path $OutputRoot "visual_review_$timestamp"
 New-Item -ItemType Directory -Path $reviewDir -Force | Out-Null
 
-$cases = @(
-  @{
-    Name = "uat_plan_sample"
-    Label = "General business deck"
-    Html = Join-Path $ProjectRoot "input\uat_plan_sample.html"
-    Focus = @(
-      "Check cover, directory, body, and ending slide order.",
-      "Check active directory highlight changes by chapter.",
-      "Check body title and subtitle placement."
-    )
-  },
-  @{
-    Name = "architecture_program_sample"
-    Label = "Architecture and governance test deck"
-    Html = Join-Path $ProjectRoot "input\architecture_program_sample.html"
-    Focus = @(
-      "Check architecture-heavy content still maps to the right layouts.",
-      "Check directory image assets remain intact after generation.",
-      "Check architecture, process, and governance pages stay readable."
-    )
-  },
-  @{
-    Name = "default_erp_blueprint"
-    Label = "ERP architecture, process, and governance"
-    Html = Join-Path $ProjectRoot "input\default_erp_blueprint.html"
-    Focus = @(
-      "Check solution_architecture, process_flow, and org_governance layouts.",
-      "Check shapes, color blocks, and text for overlap.",
-      "Check governance footer text remains readable."
-    )
-  },
-  @{
-    Name = "pcb_erp_general_solution"
-    Label = "PCB industry ERP general solution"
-    Html = Join-Path $ProjectRoot "input\pcb_erp_general_solution.html"
-    Focus = @(
-      "Check PCB-specific terminology such as CAM, MI, APS, MES, and WMS remains readable.",
-      "Check solution_architecture, process_flow, and org_governance pages fit denser industry content.",
-      "Check directory labels still read naturally for a more domain-specific deck."
-    )
-  },
-  @{
-    Name = "ai_pythonpptx_strategy"
-    Label = "Reference-style import deck"
-    Html = Join-Path $ProjectRoot "input\ai_pythonpptx_strategy.html"
-    Focus = @(
-      "Check comparison_upgrade, capability_ring, and five_phase_path style import.",
-      "Check imported shapes, icons, and decorative assets are preserved.",
-      "Check imported pages use the current sample content."
-    )
-  },
-  @{
-    Name = "vendor_launch_sample"
-    Label = "Long-text and process deck"
-    Html = Join-Path $ProjectRoot "input\vendor_launch_sample.html"
-    Focus = @(
-      "Check long text for visible overflow or truncation.",
-      "Check process step boxes are evenly distributed.",
-      "Check shortened directory labels remain readable."
-    )
-  }
-)
+$cases = Get-Content $registryPath -Raw | ConvertFrom-Json
 
 $summaryLines = New-Object System.Collections.Generic.List[string]
 $summaryLines.Add("# Visual Review Batch")
@@ -97,44 +38,44 @@ $summaryLines.Add("- Both _QA.txt and _QA.json exist.")
 $summaryLines.Add("")
 
 foreach ($case in $cases) {
-  if (-not (Test-Path $case.Html)) {
-    throw "HTML not found: $($case.Html)"
+  $htmlPath = Join-Path $ProjectRoot $case.html
+  if (-not (Test-Path $htmlPath)) {
+    throw "HTML not found: $htmlPath"
   }
 
-  Write-Host ("-- Generating visual review case: {0}" -f $case.Name)
+  Write-Host ("-- Generating visual review case: {0}" -f $case.name)
   $lines = @(
     python $scriptPath `
       --template "$Template" `
-      --html "$($case.Html)" `
+      --html "$htmlPath" `
       --reference-body "$ReferenceBody" `
-      --output-name "VisualReview_$($case.Name)" `
+      --output-name "VisualReview_$($case.name)" `
       --output-dir "$reviewDir" `
-      --chapters 3 `
       --active-start 0
   ) 2>&1
 
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to generate visual review case: $($case.Name)"
+    throw "Failed to generate visual review case: $($case.name)"
   }
 
   $cleanLines = @($lines | Where-Object { $_ -and $_.Trim() -ne "" })
   if ($cleanLines.Count -lt 2) {
-    throw "Unexpected CLI output for case: $($case.Name)"
+    throw "Unexpected CLI output for case: $($case.name)"
   }
 
   $reportPath = $cleanLines[0].Trim()
   $pptxPath = $cleanLines[1].Trim()
   $jsonPath = [System.IO.Path]::ChangeExtension($reportPath, ".json")
 
-  $summaryLines.Add("## $($case.Name)")
+  $summaryLines.Add("## $($case.name)")
   $summaryLines.Add("")
-  $summaryLines.Add("Label: $($case.Label)")
+  $summaryLines.Add("Label: $($case.label)")
   $summaryLines.Add("")
   $summaryLines.Add("PPT: $pptxPath")
   $summaryLines.Add("QA.txt: $reportPath")
   $summaryLines.Add("QA.json: $jsonPath")
   $summaryLines.Add("Focus checks:")
-  foreach ($item in $case.Focus) {
+  foreach ($item in $case.focus) {
     $summaryLines.Add("- $item")
   }
   $summaryLines.Add("")

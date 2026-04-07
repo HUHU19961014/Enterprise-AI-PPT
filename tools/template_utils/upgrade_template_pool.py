@@ -6,7 +6,7 @@ from pptx import Presentation
 
 
 def _bootstrap():
-    tools_dir = Path(__file__).resolve().parent
+    tools_dir = Path(__file__).resolve().parents[1]
     if str(tools_dir) not in sys.path:
         sys.path.insert(0, str(tools_dir))
 

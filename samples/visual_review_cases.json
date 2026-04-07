@@ -1,0 +1,62 @@
+[
+  {
+    "name": "uat_plan_sample",
+    "label": "General business deck",
+    "html": "samples/input/uat_plan_sample.html",
+    "focus": [
+      "Check cover, directory, body, and ending slide order.",
+      "Check active directory highlight changes by chapter.",
+      "Check body title and subtitle placement."
+    ]
+  },
+  {
+    "name": "architecture_program_sample",
+    "label": "Architecture and governance test deck",
+    "html": "samples/input/architecture_program_sample.html",
+    "focus": [
+      "Check architecture-heavy content still maps to the right layouts.",
+      "Check directory image assets remain intact after generation.",
+      "Check architecture, process, and governance pages stay readable."
+    ]
+  },
+  {
+    "name": "default_erp_blueprint",
+    "label": "ERP architecture, process, and governance",
+    "html": "samples/input/default_erp_blueprint.html",
+    "focus": [
+      "Check solution_architecture, process_flow, and org_governance layouts.",
+      "Check shapes, color blocks, and text for overlap.",
+      "Check governance footer text remains readable."
+    ]
+  },
+  {
+    "name": "pcb_erp_general_solution",
+    "label": "PCB industry ERP general solution",
+    "html": "samples/input/pcb_erp_general_solution.html",
+    "focus": [
+      "Check PCB-specific terminology such as CAM, MI, APS, MES, and WMS remains readable.",
+      "Check solution_architecture, process_flow, and org_governance pages fit denser industry content.",
+      "Check directory labels still read naturally for a more domain-specific deck."
+    ]
+  },
+  {
+    "name": "ai_pythonpptx_strategy",
+    "label": "Reference-style import deck",
+    "html": "samples/input/ai_pythonpptx_strategy.html",
+    "focus": [
+      "Check comparison_upgrade, capability_ring, and five_phase_path style import.",
+      "Check imported shapes, icons, and decorative assets are preserved.",
+      "Check imported pages use the current sample content."
+    ]
+  },
+  {
+    "name": "vendor_launch_sample",
+    "label": "Long-text and process deck",
+    "html": "samples/input/vendor_launch_sample.html",
+    "focus": [
+      "Check long text for visible overflow or truncation.",
+      "Check process step boxes are evenly distributed.",
+      "Check shortened directory labels remain readable."
+    ]
+  }
+]

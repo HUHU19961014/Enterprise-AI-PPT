@@ -9,10 +9,11 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 if (-not $TemplatePath) { $TemplatePath = Join-Path $ProjectRoot "assets\templates\sie_template.pptx" }
-if (-not $InputDir) { $InputDir = Join-Path $ProjectRoot "input" }
-if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "projects\generated" }
+if (-not $InputDir) { $InputDir = Join-Path $ProjectRoot "samples\input" }
+if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "output\legacy_regression" }
 
-Write-Host "== SIE-autoppt Regression Check =="
+Write-Host "== SIE-autoppt Legacy HTML Regression Check =="
+Write-Host "[WARN] This script validates legacy HTML sample rendering only. Use .\\tools\\v2_regression_check.ps1 for V2 deck regressions."
 
 function Assert-Path($path, $name) {
   if (-not (Test-Path $path)) {
@@ -80,13 +81,13 @@ print('ok')
 
 Assert-Path $TemplatePath "Template"
 Assert-Path $InputDir "Input directory"
-Assert-Path (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") "CLI entry"
+Assert-Path (Join-Path $ProjectRoot "main.py") "CLI entry"
 
 python --version | Out-Null
 python -c "import pptx; print('python-pptx ok')" | Out-Null
 Write-Host "[OK] Python and python-pptx available"
 
-python -m py_compile (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py")
+python -m py_compile (Join-Path $ProjectRoot "main.py")
 python -m py_compile (Join-Path $ProjectRoot "tools\sie_autoppt\generator.py")
 Write-Host "[OK] Python files compiled"
 
@@ -109,12 +110,11 @@ foreach ($case in $cases) {
   Write-Host ("-- Running case: {0}" -f $caseName)
   if ($expectFailure) {
     try {
-      & python (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") `
+      & python (Join-Path $ProjectRoot "main.py") `
         --template "$TemplatePath" `
         --html "$($case.FullName)" `
         --output-name "SIE_Regression_$caseName" `
         --output-dir "$OutputDir" `
-        --chapters 3 `
         --active-start 0 1>$null 2>$null
     } catch {
       if ($LASTEXITCODE -eq 0) {
@@ -127,12 +127,11 @@ foreach ($case in $cases) {
   }
 
   $lines = @(
-    python (Join-Path $ProjectRoot "tools\sie_autoppt_cli.py") `
+    python (Join-Path $ProjectRoot "main.py") `
       --template "$TemplatePath" `
       --html "$($case.FullName)" `
       --output-name "SIE_Regression_$caseName" `
       --output-dir "$OutputDir" `
-      --chapters 3 `
       --active-start 0
   ) 2>&1
 

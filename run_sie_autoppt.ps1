@@ -3,7 +3,7 @@ param(
   [string]$Html,
   [string]$OutputName = "SIE_AutoPPT",
   [string]$OutputDir,
-  [int]$Chapters = 3,
+  [int]$Chapters = 0,
   [int]$ActiveStart = 0
 )
 
@@ -11,13 +11,13 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 
 if (-not $Template) { $Template = Join-Path $ProjectRoot "assets\templates\sie_template.pptx" }
-if (-not $Html) { $Html = Join-Path $ProjectRoot "input\uat_plan_sample.html" }
-if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "projects\generated" }
+if (-not $Html) { $Html = Join-Path $ProjectRoot "samples\input\uat_plan_sample.html" }
+if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "output" }
 
 if (-not (Test-Path $Template)) { throw "Template not found: $Template" }
 if (-not (Test-Path $Html)) { throw "HTML not found: $Html" }
 
-$scriptPath = Join-Path $ProjectRoot "tools\sie_autoppt_cli.py"
+$scriptPath = Join-Path $ProjectRoot "main.py"
 if (-not (Test-Path $scriptPath)) { throw "Generator script not found: $scriptPath" }
 
 $versionFile = Join-Path $ProjectRoot "assets\templates\sie_template.version.txt"
@@ -28,12 +28,12 @@ if (Test-Path $versionFile) {
   if ($m.Success) { $expected = $m.Groups[1].Value.ToLower() }
   $actual = (Get-FileHash -Algorithm SHA256 -Path $Template).Hash.ToLower()
   if ([string]::IsNullOrWhiteSpace($expected)) {
-    Write-Host "[WARN] Template fingerprint is empty. Run tools/update_template_version.ps1"
+    Write-Host "[WARN] Template fingerprint is empty. Run tools/template_utils/update_template_version.ps1"
   } elseif ($expected -ne $actual) {
     Write-Host "[WARN] Template fingerprint mismatch!"
     Write-Host "expected: $expected"
     Write-Host "actual:   $actual"
-    Write-Host "Run tools/update_template_version.ps1 and then tools/regression_check.ps1"
+    Write-Host "Run tools/template_utils/update_template_version.ps1 and then tools/legacy_html_regression_check.ps1"
   } else {
     Write-Host "[OK] Template fingerprint matched."
   }
@@ -43,11 +43,18 @@ if (Test-Path $versionFile) {
 
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-python $scriptPath `
-  --template "$Template" `
-  --html "$Html" `
-  --output-name "$OutputName" `
-  --output-dir "$OutputDir" `
-  --chapters $Chapters `
-  --active-start $ActiveStart
+$cliArgs = @(
+  $scriptPath,
+  "--template", "$Template",
+  "--html", "$Html",
+  "--output-name", "$OutputName",
+  "--output-dir", "$OutputDir",
+  "--active-start", "$ActiveStart"
+)
+
+if ($Chapters -gt 0) {
+  $cliArgs += @("--chapters", "$Chapters")
+}
+
+python @cliArgs
 

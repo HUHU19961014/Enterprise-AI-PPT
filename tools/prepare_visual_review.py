@@ -5,57 +5,20 @@ import datetime
 import platform
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from tools.sie_autoppt.sample_registry import VisualReviewCaseConfig, load_visual_review_cases
+except ImportError:  # pragma: no cover - script mode adds tools/ to sys.path instead of repo root
+    from sie_autoppt.sample_registry import VisualReviewCaseConfig, load_visual_review_cases
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE = PROJECT_ROOT / "assets" / "templates" / "sie_template.pptx"
-DEFAULT_REFERENCE_BODY = PROJECT_ROOT / "input" / "reference_body_style.pptx"
+DEFAULT_REFERENCE_BODY = PROJECT_ROOT / "samples" / "input" / "reference_body_style.pptx"
 DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "projects" / "visual_review"
-CLI_ENTRY = PROJECT_ROOT / "tools" / "sie_autoppt_cli.py"
-
-
-@dataclass(frozen=True)
-class VisualReviewCase:
-    name: str
-    label: str
-    html: Path
-    focus: tuple[str, ...]
-
-
-CASES = (
-    VisualReviewCase(
-        name="uat_plan_sample",
-        label="General business deck",
-        html=PROJECT_ROOT / "input" / "uat_plan_sample.html",
-        focus=(
-            "Check cover, directory, body, and ending slide order.",
-            "Check active directory highlight changes by chapter.",
-            "Check body title and subtitle placement.",
-        ),
-    ),
-    VisualReviewCase(
-        name="architecture_program_sample",
-        label="Architecture and governance test deck",
-        html=PROJECT_ROOT / "input" / "architecture_program_sample.html",
-        focus=(
-            "Check architecture-heavy content still maps to the right layouts.",
-            "Check directory image assets remain intact after generation.",
-            "Check architecture, process, and governance pages stay readable.",
-        ),
-    ),
-    VisualReviewCase(
-        name="default_erp_blueprint",
-        label="ERP architecture, process, and governance",
-        html=PROJECT_ROOT / "input" / "default_erp_blueprint.html",
-        focus=(
-            "Check solution_architecture, process_flow, and org_governance layouts.",
-            "Check shapes, color blocks, and text for overlap.",
-            "Check governance footer text remains readable.",
-        ),
-    ),
-)
+CLI_ENTRY = PROJECT_ROOT / "main.py"
+VisualReviewCase = VisualReviewCaseConfig
 
 
 def build_review_dir(output_root: Path) -> Path:
@@ -77,8 +40,6 @@ def run_cli(case: VisualReviewCase, *, template: Path, reference_body: Path, rev
         f"VisualReview_{case.name}",
         "--output-dir",
         str(review_dir),
-        "--chapters",
-        "3",
         "--active-start",
         "0",
     ]
@@ -181,7 +142,7 @@ def main() -> None:
     review_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[tuple[VisualReviewCase, Path, Path, str]] = []
-    for case in CASES:
+    for case in load_visual_review_cases():
         report_path, pptx_path = run_cli(case, template=template, reference_body=reference_body, review_dir=review_dir)
         preview_note = export_preview_if_supported(pptx_path, review_dir / case.name)
         rows.append((case, report_path, pptx_path, preview_note))

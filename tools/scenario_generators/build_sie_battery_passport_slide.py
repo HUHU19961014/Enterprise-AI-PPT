@@ -18,13 +18,13 @@ try:
 except ModuleNotFoundError:
     import sys
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from sie_autoppt.config import DEFAULT_TEMPLATE, FONT_NAME
     from sie_autoppt.slide_ops import remove_slide
     from sie_autoppt.template_manifest import load_template_manifest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_FLOW = PROJECT_ROOT / "output" / "sie_battery_passport_update_rule_flow.pptx"
 OUTPUT_DECISION = PROJECT_ROOT / "output" / "sie_battery_passport_update_rule_decision.pptx"
 

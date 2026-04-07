@@ -2,10 +2,12 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .sample_registry import INPUT_SAMPLES_DIR
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ASSETS_DIR = PROJECT_ROOT / "assets"
 TEMPLATES_DIR = ASSETS_DIR / "templates"
-INPUT_DIR = PROJECT_ROOT / "input"
+INPUT_DIR = INPUT_SAMPLES_DIR
 PROJECTS_DIR = PROJECT_ROOT / "projects"
 PATTERN_FILE = PROJECT_ROOT / "skills" / "sie-autoppt" / "references" / "business-slide-patterns.json"
 
@@ -14,10 +16,7 @@ def _default_output_dir() -> Path:
     configured = os.environ.get("SIE_AUTOPPT_OUTPUT_DIR")
     if configured:
         return Path(configured).expanduser()
-    desktop = Path.home() / "Desktop"
-    if desktop.exists():
-        return desktop
-    return PROJECTS_DIR / "generated"
+    return PROJECT_ROOT / "output"
 
 
 DEFAULT_TEMPLATE = TEMPLATES_DIR / "sie_template.pptx"

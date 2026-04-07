@@ -7,7 +7,7 @@
 Generate `DeckSpec JSON` from a topic:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-plan `
+python .\main.py ai-plan `
   --topic "制造业 ERP 智能化升级方案汇报" `
   --brief "重点突出现状痛点、目标架构和分阶段落地路径" `
   --plan-output .\projects\generated\erp_ai.deck.json
@@ -16,7 +16,7 @@ python .\tools\sie_autoppt_cli.py ai-plan `
 Generate PPT directly from a topic:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-make `
+python .\main.py ai-make `
   --topic "制造业 ERP 智能化升级方案汇报" `
   --brief "重点突出现状痛点、目标架构和分阶段落地路径" `
   --min-slides 6 `
@@ -28,15 +28,15 @@ python .\tools\sie_autoppt_cli.py ai-make `
 Add extra context from a file:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-plan `
+python .\main.py ai-plan `
   --topic "供应链协同平台建设建议" `
-  --brief-file .\input\brief.txt
+  --brief-file .\regression\01_management_report\input.md
 ```
 
 Run a live AI planner connectivity check:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-check `
+python .\main.py ai-check `
   --topic "AI AutoPPT 健康检查"
 ```
 
@@ -77,7 +77,7 @@ $env:OPENAI_BASE_URL = "https://api.siliconflow.cn/v1"
 $env:SIE_AUTOPPT_LLM_API_STYLE = "chat_completions"
 $env:SIE_AUTOPPT_LLM_MODEL = "deepseek-ai/DeepSeek-V3"
 
-python .\tools\sie_autoppt_cli.py ai-check `
+python .\main.py ai-check `
   --topic "硅基流动连通性检查"
 ```
 
@@ -99,7 +99,7 @@ $env:OPENAI_BASE_URL = "http://localhost:4000/v1"
 $env:SIE_AUTOPPT_ALLOW_EMPTY_API_KEY = "true"
 $env:SIE_AUTOPPT_LLM_MODEL = "deepseek-chat"
 
-python .\tools\sie_autoppt_cli.py ai-check `
+python .\main.py ai-check `
   --topic "Local gateway healthcheck"
 ```
 
@@ -110,14 +110,14 @@ If you already have an agent tool such as OpenClaw, there are two clean ways to 
 1. Let the agent produce `DeckSpec JSON`, then call:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py render `
+python .\main.py render `
   --deck-json .\projects\generated\planned.deck.json
 ```
 
 2. Let the agent act as an external planner command:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-check `
+python .\main.py ai-check `
   --planner-command "your-agent-bridge-command"
 ```
 
@@ -149,6 +149,6 @@ Any unsupported pattern choice is normalized locally before rendering.
 ## Reference Style Import
 
 - Reference-style body pages now use a native PPTX package merge path by default.
-- The bundled `reference_body_style.pptx` carries slide metadata names such as `comparison_upgrade_reference`.
+- The bundled `samples/input/reference_body_style.pptx` carries slide metadata names such as `comparison_upgrade_reference`.
 - Reference lookup order is: slide metadata name -> text markers -> fallback page number.
 - Templates without a preallocated slide pool still work, but the legacy runtime clone path is now explicitly deprecated and should be treated as a migration target.

@@ -300,8 +300,8 @@ def validate_slide_pool_configuration(..., body_page_count: int):
 ### 5.2 回归测试
 
 确保不破坏现有的功能：
-- `input/uat_plan_sample.html` 仍然能正常渲染
-- `input/architecture_program_sample.html` 仍然能正常渲染
+- `samples/input/uat_plan_sample.html` 仍然能正常渲染
+- `samples/input/architecture_program_sample.html` 仍然能正常渲染
 - `ai-make` 命令不受影响
 
 ---

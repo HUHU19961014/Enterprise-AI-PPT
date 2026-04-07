@@ -25,8 +25,9 @@
 ### 升级模板
 
 1. 替换 `assets/templates/sie_template.pptx`
-2. 执行 `tools/update_template_version.ps1`
-3. 执行 `tools/regression_check.ps1`
+2. 执行 `tools/template_utils/update_template_version.ps1`
+3. 执行 `tools/legacy_html_regression_check.ps1`
+4. 如涉及 V2 deck，执行 `tools/v2_regression_check.ps1`
 4. 检查生成结果和 QA 报告
 
 ### 升级外部依赖

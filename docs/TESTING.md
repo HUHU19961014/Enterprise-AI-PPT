@@ -1,11 +1,12 @@
 # Testing
 
-`SIE-autoppt` 当前建议分成 4 层测试：
+`SIE-autoppt` 当前建议分成 5 类测试：
 
 1. 单元测试
 2. 轻量集成测试
-3. `tools/regression_check.ps1` 全量回归
-4. 少量人工视觉验收
+3. `tools/legacy_html_regression_check.ps1` legacy HTML 样例回归
+4. `tools/v2_regression_check.ps1` V2 deck 回归
+5. 少量人工视觉验收
 
 ## 推荐安装
 
@@ -53,10 +54,16 @@ PowerShell 快捷入口：
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
 ```
 
-全量回归：
+Legacy HTML 样例回归：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\legacy_html_regression_check.ps1
+```
+
+V2 deck 回归：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
 ```
 
 ## 需要人工配合的部分
@@ -92,4 +99,5 @@ powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
 
 - 单元与轻集成测试：`tests/`
 - 自动化运行入口：[tools/run_unit_tests.ps1](../tools/run_unit_tests.ps1)
-- 全量回归入口：[tools/regression_check.ps1](../tools/regression_check.ps1)
+- Legacy HTML 回归入口：[tools/legacy_html_regression_check.ps1](../tools/legacy_html_regression_check.ps1)
+- V2 回归入口：[tools/v2_regression_check.ps1](../tools/v2_regression_check.ps1)

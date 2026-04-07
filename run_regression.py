@@ -8,14 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from score_review import ReviewScore, evaluate_review, summarize_reviews
+from tools.review_scoring import ReviewScore, evaluate_review, summarize_reviews
 from tools.sie_autoppt.v2.ppt_engine import generate_ppt
 from tools.sie_autoppt.v2.schema import validate_deck_payload
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_REGRESSION_DIR = PROJECT_ROOT / "regression"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output" / "v2_regression"
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,7 @@ def discover_regression_cases(regression_dir: Path) -> list[Path]:
 
 
 def _case_output_dir(output_root: Path, case_name: str) -> Path:
-    return output_root / "regression" / case_name
+    return output_root / case_name
 
 
 def _read_quality_gate_payload(warnings_path: Path) -> dict[str, Any]:
@@ -421,7 +421,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         default=str(DEFAULT_OUTPUT_DIR),
-        help="Directory used for regression summary/report outputs.",
+        help="Directory used for V2 regression outputs.",
     )
     parser.add_argument(
         "--case",

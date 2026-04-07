@@ -55,7 +55,7 @@
 - 样例名称：01_management_report
 - 评审人：Claude (AI Reviewer)
 - 评审日期：2026-04-06
-- 渲染文件：output/regression/01_management_report/generated.pptx
+- 渲染文件：output/v2_regression/01_management_report/generated.pptx
 
 ## 评分项
 

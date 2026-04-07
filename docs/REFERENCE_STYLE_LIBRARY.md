@@ -1,6 +1,6 @@
 # Reference Body Style Library
 
-`input/reference_body_style.pptx` 现在作为正文参考库使用。
+`samples/input/reference_body_style.pptx` 现在作为正文参考库使用。
 
 ## 已接入样式
 

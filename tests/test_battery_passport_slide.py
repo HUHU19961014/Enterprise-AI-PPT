@@ -7,7 +7,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from tools import build_sie_battery_passport_slide as slide_builder
+from tools.scenario_generators import build_sie_battery_passport_slide as slide_builder
 
 
 class BatteryPassportSlideTests(unittest.TestCase):

@@ -13,10 +13,12 @@
 
 ### 1. 黄金样例视觉验收
 
-建议固定看这 4 组：
+默认视觉验收会准备这 6 组：
 
 - `uat_plan_sample.html`
+- `architecture_program_sample.html`
 - `default_erp_blueprint.html`
+- `pcb_erp_general_solution.html`
 - `ai_pythonpptx_strategy.html`
 - `vendor_launch_sample.html`
 
@@ -26,7 +28,7 @@
 powershell -ExecutionPolicy Bypass -File .\tools\prepare_visual_review.ps1
 ```
 
-脚本会在 `projects/visual_review/visual_review_<timestamp>/` 下生成：
+脚本会读取 `samples/visual_review_cases.json`，并在 `projects/visual_review/visual_review_<timestamp>/` 下生成：
 
 - 待检查的 `.pptx`
 - 对应 `QA.txt`

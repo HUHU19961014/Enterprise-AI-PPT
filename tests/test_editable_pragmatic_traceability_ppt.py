@@ -5,7 +5,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from tools.build_editable_pragmatic_traceability_ppt import (
+from tools.scenario_generators.build_editable_pragmatic_traceability_ppt import (
     DEFAULT_HTML,
     build_ppt,
     normalize_text,

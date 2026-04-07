@@ -101,14 +101,14 @@ One-step HTML -> PPTX:
 
 ```bash
 python -m sie_autoppt make \
-  --html ./input/uat_plan_sample.html \
+  --html ./samples/input/uat_plan_sample.html \
   --output-name Html_Render
 ```
 
-Compatibility script entrypoint still works:
+Repo-local compatibility entrypoint:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py
+python .\main.py
 ```
 
 Clarify a fuzzy request before planning:
@@ -118,6 +118,14 @@ python -m sie_autoppt clarify `
   --topic "帮我做一个给管理层看的 Q2 汇报" `
   --clarifier-state-file .\projects\generated\clarifier_state.json
 ```
+
+Run the local card-based clarification UI:
+
+```powershell
+python -m sie_autoppt clarify-web --host 127.0.0.1 --port 8765
+```
+
+Then open `http://127.0.0.1:8765` in your browser.
 
 ## Architecture
 
@@ -141,6 +149,7 @@ The current workflow is split into four layers:
 - `ai-make`: topic -> PPTX
 - `ai-check`: planner connectivity smoke test
 - `clarify`: fuzzy request -> structured clarification state
+- `clarify-web`: local browser UI for card-based clarification
 - `structure`: topic -> `Structure JSON`
 - `structure-plan`: topic / `Structure JSON` -> `DeckSpec JSON`
 - `structure-make`: topic / `Structure JSON` -> PPTX
@@ -164,8 +173,8 @@ python -m sie_autoppt structure-make `
 ## HTML and planning examples
 
 ```powershell
-python .\tools\sie_autoppt_cli.py plan `
-  --html .\input\uat_plan_sample.html `
+python .\main.py plan `
+  --html .\samples\input\uat_plan_sample.html `
   --plan-output .\projects\generated\planned.deck.json
 ```
 
@@ -191,13 +200,13 @@ python .\tools\sie_autoppt_cli.py plan `
 ```
 
 ```powershell
-python .\tools\sie_autoppt_cli.py render `
+python .\main.py render `
   --deck-json .\projects\generated\planned.deck.json `
   --output-name Rendered_From_Json
 ```
 
 ```powershell
-python .\tools\sie_autoppt_cli.py ai-make `
+python .\main.py ai-make `
   --topic "制造企业 AI AutoPPT 方案汇报" `
   --brief "突出项目现状、三层架构、实施路径和风险控制" `
   --min-slides 6 `
@@ -315,7 +324,7 @@ Reference-style body pages now use native PPTX package merge by default. The bun
 Templates without `slide_pools` still have a legacy runtime clone path, but it is explicitly deprecated. New templates should migrate to preallocated pools.
 The bundled default template ships with a 20-pair preallocated slide pool, so classic HTML decks are no longer limited to three body pages.
 
-`tools/upgrade_template_pool.py` runs on the Python/OpenXML path and does not require PowerPoint or COM. After every upgrade it validates slide count, ending slide position, and cloned directory-slide assets, so the CLI is not a blind best-effort operation.
+`tools/template_utils/upgrade_template_pool.py` runs on the Python/OpenXML path and does not require PowerPoint or COM. After every upgrade it validates slide count, ending slide position, and cloned directory-slide assets, so the CLI is not a blind best-effort operation.
 
 ## Testing
 
@@ -333,19 +342,18 @@ PowerShell helpers:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_unit_tests.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\regression_check.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\legacy_html_regression_check.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\v2_regression_check.ps1
 ```
 
 ## Docs
 
+- [Docs index](./docs/README.md)
+- [Tools index](./tools/README.md)
 - [AI planner](./docs/AI_PLANNER.md)
 - [Deck JSON spec](./docs/DECK_JSON_SPEC.md)
 - [Input spec](./docs/INPUT_SPEC.md)
 - [Testing](./docs/TESTING.md)
-- [Human visual QA](./docs/HUMAN_VISUAL_QA.md)
-- [Project direction confirmation](./docs/PROJECT_DIRECTION_CONFIRMATION.md)
-- [Structure-first architecture](./docs/STRUCTURE_FIRST_ARCHITECTURE.md)
-- [Structure quality test set](./docs/STRUCTURE_QUALITY_TESTSET.md)
 
 ## Current status
 

@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from score_review import evaluate_review, resolve_rating, summarize_reviews, update_review_file
+from tools.review_scoring import evaluate_review, resolve_rating, summarize_reviews, update_review_file
 
 
 class ScoreReviewTests(unittest.TestCase):

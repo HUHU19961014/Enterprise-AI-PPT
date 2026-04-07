@@ -7,7 +7,7 @@ from pptx import Presentation
 
 from tools.sie_autoppt.config import DEFAULT_TEMPLATE
 from tools.sie_autoppt.slide_ops import remove_slide
-from tools.upgrade_template_pool import format_validation_summary, validate_template_pool
+from tools.template_utils.upgrade_template_pool import format_validation_summary, validate_template_pool
 
 
 class UpgradeTemplatePoolTests(unittest.TestCase):

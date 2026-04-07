@@ -12,13 +12,14 @@
 
 - [ ] 标准模板存在：`assets/templates/sie_template.pptx`
 - [ ] 模板指纹文件存在：`assets/templates/sie_template.version.txt`
-- [ ] 若模板刚替换，已执行 `tools/update_template_version.ps1`
+- [ ] 若模板刚替换，已执行 `tools/template_utils/update_template_version.ps1`
 
 ## 回归检查
 
 - [ ] 已执行 `tools/run_unit_tests.ps1`
-- [ ] 已执行 `tools/regression_check.ps1`
-- [ ] 控制台出现 `Regression check passed`
+- [ ] 已执行 `tools/legacy_html_regression_check.ps1`
+- [ ] 如本次交付走 V2 流程，已执行 `tools/v2_regression_check.ps1`
+- [ ] 控制台未出现阻断性失败
 
 ## 生成检查
 

@@ -55,7 +55,7 @@
 - 样例名称：03_training_deck
 - 评审人：Claude (AI Reviewer)
 - 评审日期：2026-04-06
-- 渲染文件：output/regression/03_training_deck/generated.pptx
+- 渲染文件：output/v2_regression/03_training_deck/generated.pptx
 
 ## 评分项
 

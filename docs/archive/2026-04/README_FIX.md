@@ -55,9 +55,9 @@ $ python -m pytest tests/ -v
 
 ## 文档
 
-- **详细修复日志：** [docs/CHANGELOG_2026_04_05.md](docs/CHANGELOG_2026_04_05.md)
-- **LLM 兼容性指南：** [docs/LLM_COMPATIBILITY.md](docs/LLM_COMPATIBILITY.md)
-- **修复总结：** [docs/FIX_SUMMARY_2026_04_05.md](docs/FIX_SUMMARY_2026_04_05.md)
+- **详细修复日志：** [CHANGELOG_2026_04_05.md](./CHANGELOG_2026_04_05.md)
+- **LLM 兼容性指南：** [../../LLM_COMPATIBILITY.md](../../LLM_COMPATIBILITY.md)
+- **修复总结：** [FIX_SUMMARY_2026_04_05.md](./FIX_SUMMARY_2026_04_05.md)
 
 ## 提交记录
 

@@ -55,7 +55,7 @@
 - 样例名称：05_monthly_business_review
 - 评审人：Claude (AI Reviewer)
 - 评审日期：2026-04-06
-- 渲染文件：output/regression/05_monthly_business_review/generated.pptx
+- 渲染文件：output/v2_regression/05_monthly_business_review/generated.pptx
 
 ## 评分项
 

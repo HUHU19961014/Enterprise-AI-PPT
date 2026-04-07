@@ -118,5 +118,5 @@ Example:
 ## Notes
 
 - The directory slide shows a rolling five-item window when the deck has more than five body pages.
-- Legacy input remains useful for old samples in `input/`.
+- Legacy input remains useful for bundled samples in `samples/input/`.
 - For richer layouts, prefer explicit `<slide data-pattern>` input.

@@ -36,15 +36,15 @@
 Plan HTML into `DeckSpec JSON`:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py plan `
-  --html .\input\uat_plan_sample.html `
+python .\main.py plan `
+  --html .\samples\input\uat_plan_sample.html `
   --plan-output .\projects\generated\planned.deck.json
 ```
 
 Render PPTX from `DeckSpec JSON`:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py render `
+python .\main.py render `
   --deck-json .\projects\generated\planned.deck.json `
   --output-name SIE_Rendered_From_Json
 ```
@@ -52,8 +52,8 @@ python .\tools\sie_autoppt_cli.py render `
 Keep the original one-step flow:
 
 ```powershell
-python .\tools\sie_autoppt_cli.py `
-  --html .\input\uat_plan_sample.html `
+python .\main.py `
+  --html .\samples\input\uat_plan_sample.html `
   --output-name SIE_AutoPPT
 ```
 
