@@ -545,6 +545,295 @@
         "text_rgb": [255, 255, 255],
         "text": "Clarify the problem boundary before automating the workflow."
       }
+    },
+    "roadmap_timeline": {
+      "headline_box": {
+        "left": 900000,
+        "top": 1360000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 13
+      },
+      "timeline": {
+        "left": 980000,
+        "top": 2600000,
+        "width": 9800000,
+        "height": 80000,
+        "fill_rgb": [210, 218, 226],
+        "accent_rgb": [173, 5, 61]
+      },
+      "grid": {
+        "left": 900000,
+        "top": 1850000,
+        "card_width": 1900000,
+        "card_height": 2100000,
+        "gap_x": 140000,
+        "columns": 5
+      },
+      "period_box": {
+        "left_offset": 0,
+        "top_offset": 0,
+        "width": 1900000,
+        "height": 240000,
+        "font_pt": 11,
+        "text_rgb": [173, 5, 61]
+      },
+      "milestone": {
+        "center_x_offset": 950000,
+        "center_y": 2640000,
+        "size": 150000,
+        "line_height": 320000,
+        "fill_rgb": [173, 5, 61],
+        "line_rgb": [173, 5, 61]
+      },
+      "card_style": {
+        "top_offset": 880000,
+        "fill_rgb": [247, 249, 252],
+        "line_rgb": [214, 221, 229]
+      },
+      "title_box": {
+        "left_offset": 120000,
+        "top_offset": 1010000,
+        "width_padding": 240000,
+        "height": 260000,
+        "font_pt": 13
+      },
+      "detail_box": {
+        "left_offset": 120000,
+        "top_offset": 1320000,
+        "width_padding": 240000,
+        "height": 620000,
+        "font_pt": 10,
+        "wrap_chars": 16
+      },
+      "footer_box": {
+        "left": 900000,
+        "top": 4450000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 11
+      }
+    },
+    "kpi_dashboard": {
+      "headline_box": {
+        "left": 900000,
+        "top": 1360000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 13
+      },
+      "metrics_grid": {
+        "left": 900000,
+        "top": 1820000,
+        "card_width": 2300000,
+        "card_height": 1180000,
+        "gap_x": 220000,
+        "columns": 4
+      },
+      "metric_card": {
+        "fill_rgb": [247, 249, 252],
+        "line_rgb": [214, 221, 229]
+      },
+      "metric_label_box": {
+        "left_offset": 120000,
+        "top_offset": 120000,
+        "width_padding": 240000,
+        "height": 200000,
+        "font_pt": 10
+      },
+      "metric_value_box": {
+        "left_offset": 120000,
+        "top_offset": 360000,
+        "width_padding": 240000,
+        "height": 320000,
+        "font_pt": 22,
+        "text_rgb": [173, 5, 61]
+      },
+      "metric_detail_box": {
+        "left_offset": 120000,
+        "top_offset": 770000,
+        "width_padding": 240000,
+        "height": 220000,
+        "font_pt": 9,
+        "wrap_chars": 18
+      },
+      "insight_band": {
+        "left": 900000,
+        "top": 3320000,
+        "width": 10100000,
+        "height": 320000,
+        "fill_rgb": [173, 5, 61],
+        "line_rgb": [173, 5, 61],
+        "text_left": 930000,
+        "text_top": 3380000,
+        "text_width": 9600000,
+        "text_height": 220000,
+        "font_pt": 13,
+        "text_rgb": [255, 255, 255],
+        "text": "关键经营洞察"
+      },
+      "insights_grid": {
+        "left": 900000,
+        "top": 3780000,
+        "card_width": 3100000,
+        "card_height": 820000,
+        "gap_x": 220000,
+        "columns": 3
+      },
+      "insight_card": {
+        "fill_rgb": [250, 251, 253],
+        "line_rgb": [218, 225, 233]
+      },
+      "insight_text_box": {
+        "left_offset": 120000,
+        "top_offset": 130000,
+        "width_padding": 240000,
+        "height": 520000,
+        "font_pt": 11,
+        "wrap_chars": 24
+      },
+      "footer_box": {
+        "left": 900000,
+        "top": 4700000,
+        "width": 10100000,
+        "height": 240000,
+        "font_pt": 10
+      }
+    },
+    "risk_matrix": {
+      "headline_box": {
+        "left": 900000,
+        "top": 1360000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 13
+      },
+      "matrix": {
+        "left": 1300000,
+        "top": 1950000,
+        "width": 9300000,
+        "height": 2100000,
+        "line_rgb": [214, 221, 229],
+        "axis_rgb": [60, 76, 96]
+      },
+      "quadrants": {
+        "card_fill_rgb": [247, 249, 252],
+        "card_line_rgb": [214, 221, 229],
+        "high_fill_rgb": [252, 238, 240],
+        "high_line_rgb": [173, 5, 61],
+        "labels": [
+          {"name": "高概率 / 高影响", "left": 1300000, "top": 1950000},
+          {"name": "低概率 / 高影响", "left": 5950000, "top": 1950000},
+          {"name": "高概率 / 低影响", "left": 1300000, "top": 3000000},
+          {"name": "低概率 / 低影响", "left": 5950000, "top": 3000000}
+        ]
+      },
+      "label_box": {
+        "width": 3600000,
+        "height": 220000,
+        "font_pt": 10,
+        "text_rgb": [60, 76, 96]
+      },
+      "risk_card": {
+        "width": 3400000,
+        "height": 520000
+      },
+      "risk_title_box": {
+        "left_offset": 120000,
+        "top_offset": 70000,
+        "width_padding": 240000,
+        "height": 180000,
+        "font_pt": 12
+      },
+      "risk_detail_box": {
+        "left_offset": 120000,
+        "top_offset": 250000,
+        "width_padding": 240000,
+        "height": 180000,
+        "font_pt": 9,
+        "wrap_chars": 28
+      },
+      "footer_box": {
+        "left": 900000,
+        "top": 4400000,
+        "width": 10100000,
+        "height": 240000,
+        "font_pt": 10
+      }
+    },
+    "claim_breakdown": {
+      "headline_box": {
+        "left": 900000,
+        "top": 1360000,
+        "width": 10100000,
+        "height": 260000,
+        "font_pt": 13
+      },
+      "claims_grid": {
+        "left": 900000,
+        "top": 1900000,
+        "card_width": 2300000,
+        "card_height": 1200000,
+        "gap_x": 220000,
+        "columns": 4
+      },
+      "claim_card": {
+        "fill_rgb": [247, 249, 252],
+        "line_rgb": [214, 221, 229]
+      },
+      "claim_label_box": {
+        "left_offset": 120000,
+        "top_offset": 120000,
+        "width_padding": 240000,
+        "height": 200000,
+        "font_pt": 10
+      },
+      "claim_value_box": {
+        "left_offset": 120000,
+        "top_offset": 350000,
+        "width_padding": 240000,
+        "height": 320000,
+        "font_pt": 20,
+        "text_rgb": [173, 5, 61]
+      },
+      "claim_detail_box": {
+        "left_offset": 120000,
+        "top_offset": 760000,
+        "width_padding": 240000,
+        "height": 220000,
+        "font_pt": 9,
+        "wrap_chars": 18
+      },
+      "summary_band": {
+        "left": 900000,
+        "top": 3450000,
+        "width": 10100000,
+        "height": 320000,
+        "fill_rgb": [173, 5, 61],
+        "line_rgb": [173, 5, 61],
+        "text_left": 940000,
+        "text_top": 3510000,
+        "text_width": 9500000,
+        "text_height": 220000,
+        "font_pt": 13,
+        "text_rgb": [255, 255, 255],
+        "text": "核心拆解结论"
+      },
+      "summary_box": {
+        "left": 900000,
+        "top": 3920000,
+        "width": 10100000,
+        "height": 460000,
+        "font_pt": 12,
+        "wrap_chars": 54
+      },
+      "footer_box": {
+        "left": 900000,
+        "top": 4540000,
+        "width": 10100000,
+        "height": 240000,
+        "font_pt": 10
+      }
     }
   }
 }

@@ -121,6 +121,68 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(deck.body_pages[1].slide_role, "body")
         self.assertEqual(deck.body_pages[1].layout_hints["density"], "compact")
 
+    def test_slide_tag_html_supports_dashboard_and_roadmap_patterns(self):
+        html = """
+        <div class="title">Business Review</div>
+        <slide data-pattern="kpi_dashboard">
+          <h2>经营指标</h2>
+          <p class="subtitle">核心 KPI 摘要</p>
+          <ul>
+            <li>收入增长: 18%</li>
+            <li>利润率: 32%</li>
+            <li>交付准时率: 96%</li>
+            <li>客户满意度: 92%</li>
+          </ul>
+        </slide>
+        <slide data-pattern="roadmap_timeline">
+          <h2>年度路线图</h2>
+          <p class="subtitle">按季度推进</p>
+          <ul>
+            <li>Q1: 完成现状诊断</li>
+            <li>Q2: 搭建能力底座</li>
+            <li>Q3: 推进试点上线</li>
+            <li>Q4: 复制推广</li>
+          </ul>
+        </slide>
+        """
+
+        deck = build_deck_spec_from_html(html, chapters=None)
+
+        self.assertEqual([page.pattern_id for page in deck.body_pages], ["kpi_dashboard", "roadmap_timeline"])
+        self.assertIn("metrics", deck.body_pages[0].payload)
+        self.assertIn("stages", deck.body_pages[1].payload)
+
+    def test_slide_tag_html_supports_risk_and_claim_patterns(self):
+        html = """
+        <div class="title">Arbitration Review</div>
+        <slide data-pattern="risk_matrix">
+          <h2>风险矩阵</h2>
+          <p class="subtitle">核心风险判断</p>
+          <ul>
+            <li>汇率风险: 影响偿债能力</li>
+            <li>政策风险: 影响谈判节奏</li>
+            <li>执行风险: 影响项目收益</li>
+            <li>声誉风险: 影响后续合作</li>
+          </ul>
+        </slide>
+        <slide data-pattern="claim_breakdown">
+          <h2>索赔拆解</h2>
+          <p class="subtitle">金额构成</p>
+          <ul>
+            <li>电费欠款: $2.1B</li>
+            <li>违约利息: $1.3B</li>
+            <li>汇率损失: $0.8B</li>
+            <li>其他费用: $0.3B</li>
+          </ul>
+        </slide>
+        """
+
+        deck = build_deck_spec_from_html(html, chapters=None)
+
+        self.assertEqual([page.pattern_id for page in deck.body_pages], ["risk_matrix", "claim_breakdown"])
+        self.assertIn("items", deck.body_pages[0].payload)
+        self.assertIn("claims", deck.body_pages[1].payload)
+
     def test_card_analysis_html_uses_reference_styles(self):
         html = (INPUT_DIR / "ai_pythonpptx_strategy.html").read_text(encoding="utf-8")
 
@@ -179,6 +241,24 @@ class DeckPlannerTests(unittest.TestCase):
         self.assertEqual(len(deck.body_pages[1].payload.get("steps", [])), 4)
         self.assertEqual(deck.body_pages[2].payload.get("label_prefix"), "重点")
         self.assertTrue(deck.body_pages[2].payload.get("footer_text"))
+
+    def test_choose_page_pattern_prefers_dashboard_keywords(self):
+        pattern_id, _, _, _ = resolve_page_layout(
+            "kpi_dashboard",
+            "经营指标仪表盘",
+            ["收入增长: 18%", "利润提升: 6%"],
+        )
+
+        self.assertEqual(pattern_id, "kpi_dashboard")
+
+    def test_choose_page_pattern_prefers_risk_keywords(self):
+        pattern_id, _, _, _ = resolve_page_layout(
+            "risk_matrix",
+            "风险矩阵评估",
+            ["汇率风险", "政策风险"],
+        )
+
+        self.assertEqual(pattern_id, "risk_matrix")
 
     def test_paginate_body_page_creates_continuation_metadata(self):
         from tools.sie_autoppt.models import BodyPageSpec

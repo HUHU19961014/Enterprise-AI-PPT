@@ -17,9 +17,14 @@ from ..patterns import infer_pattern
 from ..prompting import render_prompt_template
 from ..template_manifest import load_template_manifest
 from .deck_planner import (
+    build_dashboard_insights,
+    build_claim_items,
     build_governance_cards,
+    build_kpi_metrics,
     build_pipeline_payload,
     build_process_steps,
+    build_risk_items,
+    build_roadmap_stages,
     compact_text,
     concise_text,
     short_stage_label,
@@ -37,6 +42,10 @@ SUPPORTED_AI_PATTERNS = (
     "capability_ring",
     "five_phase_path",
     "pain_cards",
+    "roadmap_timeline",
+    "kpi_dashboard",
+    "risk_matrix",
+    "claim_breakdown",
 )
 
 # Accept both direct renderer pattern ids and higher-level semantic aliases.
@@ -49,12 +58,16 @@ PATTERN_COMPATIBILITY_MAP = {
     "capability_ring": "capability_ring",
     "five_phase_path": "five_phase_path",
     "pain_cards": "pain_cards",
+    "roadmap_timeline": "roadmap_timeline",
+    "kpi_dashboard": "kpi_dashboard",
+    "risk_matrix": "risk_matrix",
+    "claim_breakdown": "claim_breakdown",
     "policy_timeline": "general_business",
     "pain_points": "pain_cards",
-    "value_benefit": "general_business",
-    "implementation_plan": "process_flow",
+    "value_benefit": "kpi_dashboard",
+    "implementation_plan": "roadmap_timeline",
     "capability_matrix": "capability_ring",
-    "case_proof": "general_business",
+    "case_proof": "claim_breakdown",
     "action_next_steps": "general_business",
 }
 
@@ -175,6 +188,8 @@ def normalize_ai_planning_request(request: AiPlanningRequest, model: str | None 
         model=model,
         prefer_llm=False,
     )
+    if getattr(context, "blocking", False):
+        raise ValueError(context.message)
     normalized_request = AiPlanningRequest(
         topic=context.topic.strip(),
         chapters=context.chapters,
@@ -197,6 +212,10 @@ def _render_supported_pattern_guide() -> str:
         "- capability_ring: capability themes, principle clusters, dimension overviews",
         "- five_phase_path: explicit phased plan, multi-stage delivery roadmap",
         "- pain_cards: pain points, issues, bottlenecks, challenge breakdown",
+        "- roadmap_timeline: quarter plan, milestone roadmap, staged delivery timeline",
+        "- kpi_dashboard: KPI summary, target dashboard, business performance highlights",
+        "- risk_matrix: risk assessment by probability and impact, key exposure prioritization",
+        "- claim_breakdown: amount or claim composition, cost breakdown, structured financial split",
     ]
     return "\n".join(entries)
 
@@ -411,6 +430,40 @@ def _build_pain_cards_payload(subtitle: str, bullets: list[str]) -> dict[str, ob
     }
 
 
+def _build_roadmap_timeline_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    return {
+        "headline": compact_text(subtitle or "阶段目标与里程碑安排", 36),
+        "footer": compact_text(subtitle or "按统一节奏推进关键事项与验收节点。", 36),
+        "stages": build_roadmap_stages(bullets),
+    }
+
+
+def _build_kpi_dashboard_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    return {
+        "headline": compact_text(subtitle or "核心经营指标与阶段表现", 36),
+        "footer": compact_text(subtitle or "通过统一指标视图追踪执行成效。", 36),
+        "metrics": build_kpi_metrics(bullets),
+        "insights": build_dashboard_insights(bullets[4:] or bullets),
+    }
+
+
+def _build_risk_matrix_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    return {
+        "headline": compact_text(subtitle or "关键风险分布与优先级", 36),
+        "footer": compact_text(subtitle or "优先处理高概率高影响事项。", 36),
+        "items": build_risk_items(bullets),
+    }
+
+
+def _build_claim_breakdown_payload(subtitle: str, bullets: list[str]) -> dict[str, object]:
+    return {
+        "headline": compact_text(subtitle or "金额构成与主项拆解", 36),
+        "footer": compact_text(subtitle or "聚焦金额最大、影响最强的主项。", 36),
+        "claims": build_claim_items(bullets),
+        "summary": compact_text(subtitle or "拆解结果用于支撑后续决策与优先级排序。", 56),
+    }
+
+
 def build_ai_page_payload(pattern_id: str, title: str, subtitle: str, bullets: list[str]) -> dict[str, object]:
     if pattern_id == "solution_architecture":
         return _build_architecture_payload(title, bullets)
@@ -430,6 +483,14 @@ def build_ai_page_payload(pattern_id: str, title: str, subtitle: str, bullets: l
         return _build_five_phase_payload(subtitle, bullets)
     if pattern_id == "pain_cards":
         return _build_pain_cards_payload(subtitle, bullets)
+    if pattern_id == "roadmap_timeline":
+        return _build_roadmap_timeline_payload(subtitle, bullets)
+    if pattern_id == "kpi_dashboard":
+        return _build_kpi_dashboard_payload(subtitle, bullets)
+    if pattern_id == "risk_matrix":
+        return _build_risk_matrix_payload(subtitle, bullets)
+    if pattern_id == "claim_breakdown":
+        return _build_claim_breakdown_payload(subtitle, bullets)
     return {}
 
 

@@ -55,6 +55,10 @@ Rules:
   - `capability_ring`
   - `five_phase_path`
   - `pain_cards`
+  - `roadmap_timeline`
+  - `kpi_dashboard`
+  - `risk_matrix`
+  - `claim_breakdown`
 - Slide content can come from either:
   - `<ul><li>...</li></ul>`
   - plain `<p>` / `<div>` text inside the slide

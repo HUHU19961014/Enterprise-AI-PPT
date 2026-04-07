@@ -35,6 +35,17 @@ PATTERN_ALIASES: dict[str, tuple[str, ...]] = {
     "capability_matrix": ("capability", "matrix", "maturity", "assessment", "scorecard"),
     "case_proof": ("case", "reference", "proof", "evidence", "benchmark"),
     "action_next_steps": ("action", "next step", "recommendation", "summary", "roadmap"),
+    "roadmap_timeline": ("roadmap", "timeline", "milestone", "phase", "quarter", "里程碑", "路线图", "阶段目标"),
+    "kpi_dashboard": ("kpi", "dashboard", "metric", "scorecard", "target", "指标", "仪表盘", "经营表现"),
+    "risk_matrix": ("risk", "matrix", "probability", "impact", "风险", "矩阵", "概率", "影响"),
+    "claim_breakdown": ("claim", "breakdown", "amount", "cost", "索赔", "拆解", "金额", "构成"),
+}
+
+_DIRECT_PATTERN_HINTS: dict[str, tuple[str, ...]] = {
+    "roadmap_timeline": ("路线图", "里程碑", "时间轴", "roadmap", "milestone"),
+    "kpi_dashboard": ("仪表盘", "kpi", "dashboard", "scorecard", "经营指标"),
+    "risk_matrix": ("风险矩阵", "风险", "概率", "影响", "risk matrix"),
+    "claim_breakdown": ("索赔拆解", "金额拆解", "成本拆解", "claim breakdown"),
 }
 
 
@@ -104,6 +115,14 @@ def _score_alias(alias: str, normalized_text: str, compact_text: str, english_to
 
 def _is_low_confidence(best_score: int, second_best_score: int) -> bool:
     return best_score < DEFAULT_PATTERN_LOW_CONFIDENCE_SCORE or (best_score - second_best_score) <= DEFAULT_PATTERN_MARGIN_THRESHOLD
+
+
+def _direct_pattern_match(title: str, bullets: list[str]) -> str:
+    combined = f"{title} {' '.join(bullets or [])}".lower()
+    for pattern_id, hints in _DIRECT_PATTERN_HINTS.items():
+        if any(hint.lower() in combined for hint in hints):
+            return pattern_id
+    return ""
 
 
 def _score_patterns(title: str, bullets: list[str]) -> list[tuple[str, int]]:
@@ -177,6 +196,16 @@ def infer_pattern_details(
     enable_ai_assist: bool | None = None,
     ai_pattern_resolver=None,
 ) -> PatternInferenceResult:
+    direct_match = _direct_pattern_match(title, bullets)
+    if direct_match:
+        return PatternInferenceResult(
+            pattern_id=direct_match,
+            best_score=10,
+            second_best_score=0,
+            low_confidence=False,
+            used_ai_assist=False,
+        )
+
     scores = _score_patterns(title, bullets)
     best_id = "general_business"
     best_score = 0

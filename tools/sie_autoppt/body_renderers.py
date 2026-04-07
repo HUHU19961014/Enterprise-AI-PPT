@@ -903,6 +903,486 @@ def _render_pain_cards(slide, page: BodyPageSpec, manifest: TemplateManifest):
     )
 
 
+def _render_roadmap_timeline(slide, page: BodyPageSpec, manifest: TemplateManifest):
+    spec = _layout(manifest, "roadmap_timeline")
+    payload = page.payload
+    add_textbox(
+        slide,
+        int(spec["headline_box"]["left"]),
+        int(spec["headline_box"]["top"]),
+        int(spec["headline_box"]["width"]),
+        int(spec["headline_box"]["height"]),
+        str(payload.get("headline", page.subtitle)),
+        size_pt=int(spec["headline_box"]["font_pt"]),
+        bold=True,
+        color=_rgb(spec["period_box"]["text_rgb"]),
+        align=PP_ALIGN.CENTER,
+    )
+
+    timeline = slide.shapes.add_shape(
+        1,
+        int(spec["timeline"]["left"]),
+        int(spec["timeline"]["top"]),
+        int(spec["timeline"]["width"]),
+        int(spec["timeline"]["height"]),
+    )
+    timeline.fill.solid()
+    timeline.fill.fore_color.rgb = RGBColor(*_rgb(spec["timeline"]["fill_rgb"]))
+    timeline.line.color.rgb = RGBColor(*_rgb(spec["timeline"]["fill_rgb"]))
+
+    stages = list(payload.get("stages", []))[: int(spec["grid"]["columns"])]
+    for idx, stage in enumerate(stages):
+        left = int(spec["grid"]["left"]) + idx * (int(spec["grid"]["card_width"]) + int(spec["grid"]["gap_x"]))
+        card_top = int(spec["grid"]["top"]) + int(spec["card_style"]["top_offset"])
+        add_textbox(
+            slide,
+            left + int(spec["period_box"]["left_offset"]),
+            int(spec["grid"]["top"]) + int(spec["period_box"]["top_offset"]),
+            int(spec["period_box"]["width"]),
+            int(spec["period_box"]["height"]),
+            str(stage.get("period", f"阶段{idx + 1}")),
+            size_pt=int(spec["period_box"]["font_pt"]),
+            bold=True,
+            color=_rgb(spec["period_box"]["text_rgb"]),
+            align=PP_ALIGN.CENTER,
+        )
+
+        connector = slide.shapes.add_shape(
+            1,
+            left + int(spec["milestone"]["center_x_offset"]) - int(spec["timeline"]["height"]) // 2,
+            int(spec["grid"]["top"]) + int(spec["period_box"]["height"]),
+            int(spec["timeline"]["height"]),
+            int(spec["milestone"]["line_height"]),
+        )
+        connector.fill.solid()
+        connector.fill.fore_color.rgb = RGBColor(*_rgb(spec["milestone"]["line_rgb"]))
+        connector.line.color.rgb = RGBColor(*_rgb(spec["milestone"]["line_rgb"]))
+
+        milestone = slide.shapes.add_shape(
+            1,
+            left + int(spec["milestone"]["center_x_offset"]) - int(spec["milestone"]["size"]) // 2,
+            int(spec["milestone"]["center_y"]) - int(spec["milestone"]["size"]) // 2,
+            int(spec["milestone"]["size"]),
+            int(spec["milestone"]["size"]),
+        )
+        milestone.fill.solid()
+        milestone.fill.fore_color.rgb = RGBColor(*_rgb(spec["milestone"]["fill_rgb"]))
+        milestone.line.color.rgb = RGBColor(*_rgb(spec["milestone"]["fill_rgb"]))
+
+        card = slide.shapes.add_shape(
+            1,
+            left,
+            card_top,
+            int(spec["grid"]["card_width"]),
+            int(spec["grid"]["card_height"]),
+        )
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_rgb(spec["card_style"]["fill_rgb"]))
+        card.line.color.rgb = RGBColor(*_rgb(spec["card_style"]["line_rgb"]))
+
+        add_textbox(
+            slide,
+            left + int(spec["title_box"]["left_offset"]),
+            card_top + int(spec["title_box"]["top_offset"]),
+            int(spec["grid"]["card_width"]) - int(spec["title_box"]["width_padding"]),
+            int(spec["title_box"]["height"]),
+            str(stage.get("title", "")),
+            size_pt=int(spec["title_box"]["font_pt"]),
+            bold=True,
+            align=PP_ALIGN.CENTER,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["detail_box"]["left_offset"]),
+            card_top + int(spec["detail_box"]["top_offset"]),
+            int(spec["grid"]["card_width"]) - int(spec["detail_box"]["width_padding"]),
+            int(spec["detail_box"]["height"]),
+            normalize_text_for_box(str(stage.get("detail", "")), int(spec["detail_box"]["wrap_chars"])),
+            size_pt=int(spec["detail_box"]["font_pt"]),
+            align=PP_ALIGN.CENTER,
+        )
+
+    add_textbox(
+        slide,
+        int(spec["footer_box"]["left"]),
+        int(spec["footer_box"]["top"]),
+        int(spec["footer_box"]["width"]),
+        int(spec["footer_box"]["height"]),
+        str(payload.get("footer", page.subtitle)),
+        size_pt=int(spec["footer_box"]["font_pt"]),
+        color=_rgb(spec["period_box"]["text_rgb"]),
+        align=PP_ALIGN.CENTER,
+    )
+
+
+def _render_kpi_dashboard(slide, page: BodyPageSpec, manifest: TemplateManifest):
+    spec = _layout(manifest, "kpi_dashboard")
+    payload = page.payload
+    accent_rgb = _accent_rgb(manifest)
+    sub_rgb = _inactive_rgb(manifest)
+    add_textbox(
+        slide,
+        int(spec["headline_box"]["left"]),
+        int(spec["headline_box"]["top"]),
+        int(spec["headline_box"]["width"]),
+        int(spec["headline_box"]["height"]),
+        str(payload.get("headline", page.subtitle)),
+        size_pt=int(spec["headline_box"]["font_pt"]),
+        bold=True,
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+    metrics = list(payload.get("metrics", []))[: int(spec["metrics_grid"]["columns"])]
+    for idx, metric in enumerate(metrics):
+        left = int(spec["metrics_grid"]["left"]) + idx * (
+            int(spec["metrics_grid"]["card_width"]) + int(spec["metrics_grid"]["gap_x"])
+        )
+        top = int(spec["metrics_grid"]["top"])
+        card = slide.shapes.add_shape(
+            1,
+            left,
+            top,
+            int(spec["metrics_grid"]["card_width"]),
+            int(spec["metrics_grid"]["card_height"]),
+        )
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_rgb(spec["metric_card"]["fill_rgb"]))
+        card.line.color.rgb = RGBColor(*_rgb(spec["metric_card"]["line_rgb"]))
+
+        add_textbox(
+            slide,
+            left + int(spec["metric_label_box"]["left_offset"]),
+            top + int(spec["metric_label_box"]["top_offset"]),
+            int(spec["metrics_grid"]["card_width"]) - int(spec["metric_label_box"]["width_padding"]),
+            int(spec["metric_label_box"]["height"]),
+            str(metric.get("label", f"KPI {idx + 1}")),
+            size_pt=int(spec["metric_label_box"]["font_pt"]),
+            bold=True,
+            color=sub_rgb,
+            align=PP_ALIGN.CENTER,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["metric_value_box"]["left_offset"]),
+            top + int(spec["metric_value_box"]["top_offset"]),
+            int(spec["metrics_grid"]["card_width"]) - int(spec["metric_value_box"]["width_padding"]),
+            int(spec["metric_value_box"]["height"]),
+            str(metric.get("value", "--")),
+            size_pt=int(spec["metric_value_box"]["font_pt"]),
+            bold=True,
+            color=_rgb(spec["metric_value_box"]["text_rgb"]) or accent_rgb,
+            align=PP_ALIGN.CENTER,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["metric_detail_box"]["left_offset"]),
+            top + int(spec["metric_detail_box"]["top_offset"]),
+            int(spec["metrics_grid"]["card_width"]) - int(spec["metric_detail_box"]["width_padding"]),
+            int(spec["metric_detail_box"]["height"]),
+            normalize_text_for_box(str(metric.get("detail", "")), int(spec["metric_detail_box"]["wrap_chars"])),
+            size_pt=int(spec["metric_detail_box"]["font_pt"]),
+            color=sub_rgb,
+            align=PP_ALIGN.CENTER,
+        )
+
+    insight_band = slide.shapes.add_shape(
+        1,
+        int(spec["insight_band"]["left"]),
+        int(spec["insight_band"]["top"]),
+        int(spec["insight_band"]["width"]),
+        int(spec["insight_band"]["height"]),
+    )
+    insight_band.fill.solid()
+    insight_band.fill.fore_color.rgb = RGBColor(*_rgb(spec["insight_band"]["fill_rgb"]))
+    insight_band.line.color.rgb = RGBColor(*_rgb(spec["insight_band"]["line_rgb"]))
+    add_textbox(
+        slide,
+        int(spec["insight_band"]["text_left"]),
+        int(spec["insight_band"]["text_top"]),
+        int(spec["insight_band"]["text_width"]),
+        int(spec["insight_band"]["text_height"]),
+        str(payload.get("band_text", spec["insight_band"]["text"])),
+        size_pt=int(spec["insight_band"]["font_pt"]),
+        bold=True,
+        color=_rgb(spec["insight_band"]["text_rgb"]),
+        align=PP_ALIGN.CENTER,
+    )
+
+    insights = list(payload.get("insights", []))[: int(spec["insights_grid"]["columns"])]
+    for idx, insight in enumerate(insights):
+        left = int(spec["insights_grid"]["left"]) + idx * (
+            int(spec["insights_grid"]["card_width"]) + int(spec["insights_grid"]["gap_x"])
+        )
+        top = int(spec["insights_grid"]["top"])
+        card = slide.shapes.add_shape(
+            1,
+            left,
+            top,
+            int(spec["insights_grid"]["card_width"]),
+            int(spec["insights_grid"]["card_height"]),
+        )
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_rgb(spec["insight_card"]["fill_rgb"]))
+        card.line.color.rgb = RGBColor(*_rgb(spec["insight_card"]["line_rgb"]))
+        add_textbox(
+            slide,
+            left + int(spec["insight_text_box"]["left_offset"]),
+            top + int(spec["insight_text_box"]["top_offset"]),
+            int(spec["insights_grid"]["card_width"]) - int(spec["insight_text_box"]["width_padding"]),
+            int(spec["insight_text_box"]["height"]),
+            normalize_text_for_box(str(insight), int(spec["insight_text_box"]["wrap_chars"])),
+            size_pt=int(spec["insight_text_box"]["font_pt"]),
+            align=PP_ALIGN.CENTER,
+        )
+
+    add_textbox(
+        slide,
+        int(spec["footer_box"]["left"]),
+        int(spec["footer_box"]["top"]),
+        int(spec["footer_box"]["width"]),
+        int(spec["footer_box"]["height"]),
+        str(payload.get("footer", page.subtitle)),
+        size_pt=int(spec["footer_box"]["font_pt"]),
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+
+def _render_risk_matrix(slide, page: BodyPageSpec, manifest: TemplateManifest):
+    spec = _layout(manifest, "risk_matrix")
+    payload = page.payload
+    sub_rgb = _inactive_rgb(manifest)
+    add_textbox(
+        slide,
+        int(spec["headline_box"]["left"]),
+        int(spec["headline_box"]["top"]),
+        int(spec["headline_box"]["width"]),
+        int(spec["headline_box"]["height"]),
+        str(payload.get("headline", page.subtitle)),
+        size_pt=int(spec["headline_box"]["font_pt"]),
+        bold=True,
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+    matrix = slide.shapes.add_shape(
+        1,
+        int(spec["matrix"]["left"]),
+        int(spec["matrix"]["top"]),
+        int(spec["matrix"]["width"]),
+        int(spec["matrix"]["height"]),
+    )
+    matrix.fill.background()
+    matrix.line.color.rgb = RGBColor(*_rgb(spec["matrix"]["line_rgb"]))
+
+    vertical = slide.shapes.add_shape(
+        1,
+        int(spec["matrix"]["left"]) + int(spec["matrix"]["width"]) // 2,
+        int(spec["matrix"]["top"]),
+        40000,
+        int(spec["matrix"]["height"]),
+    )
+    vertical.fill.solid()
+    vertical.fill.fore_color.rgb = RGBColor(*_rgb(spec["matrix"]["line_rgb"]))
+    vertical.line.color.rgb = RGBColor(*_rgb(spec["matrix"]["line_rgb"]))
+
+    horizontal = slide.shapes.add_shape(
+        1,
+        int(spec["matrix"]["left"]),
+        int(spec["matrix"]["top"]) + int(spec["matrix"]["height"]) // 2,
+        int(spec["matrix"]["width"]),
+        40000,
+    )
+    horizontal.fill.solid()
+    horizontal.fill.fore_color.rgb = RGBColor(*_rgb(spec["matrix"]["line_rgb"]))
+    horizontal.line.color.rgb = RGBColor(*_rgb(spec["matrix"]["line_rgb"]))
+
+    quadrant_positions = {
+        "high_high": (1500000, 2260000),
+        "low_high": (6150000, 2260000),
+        "high_low": (1500000, 3310000),
+        "low_low": (6150000, 3310000),
+    }
+    labels = list(spec["quadrants"]["labels"])
+    for label in labels:
+        add_textbox(
+            slide,
+            int(label["left"]),
+            int(label["top"]),
+            int(spec["label_box"]["width"]),
+            int(spec["label_box"]["height"]),
+            str(label["name"]),
+            size_pt=int(spec["label_box"]["font_pt"]),
+            bold=True,
+            color=_rgb(spec["label_box"]["text_rgb"]),
+        )
+
+    items = list(payload.get("items", []))[:4]
+    for item in items:
+        quadrant = str(item.get("quadrant", "high_high"))
+        left, top = quadrant_positions.get(quadrant, quadrant_positions["high_high"])
+        is_high = quadrant == "high_high"
+        card = slide.shapes.add_shape(
+            1,
+            left,
+            top,
+            int(spec["risk_card"]["width"]),
+            int(spec["risk_card"]["height"]),
+        )
+        fill_key = "high_fill_rgb" if is_high else "card_fill_rgb"
+        line_key = "high_line_rgb" if is_high else "card_line_rgb"
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_rgb(spec["quadrants"][fill_key]))
+        card.line.color.rgb = RGBColor(*_rgb(spec["quadrants"][line_key]))
+        add_textbox(
+            slide,
+            left + int(spec["risk_title_box"]["left_offset"]),
+            top + int(spec["risk_title_box"]["top_offset"]),
+            int(spec["risk_card"]["width"]) - int(spec["risk_title_box"]["width_padding"]),
+            int(spec["risk_title_box"]["height"]),
+            str(item.get("title", "")),
+            size_pt=int(spec["risk_title_box"]["font_pt"]),
+            bold=True,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["risk_detail_box"]["left_offset"]),
+            top + int(spec["risk_detail_box"]["top_offset"]),
+            int(spec["risk_card"]["width"]) - int(spec["risk_detail_box"]["width_padding"]),
+            int(spec["risk_detail_box"]["height"]),
+            normalize_text_for_box(str(item.get("detail", "")), int(spec["risk_detail_box"]["wrap_chars"])),
+            size_pt=int(spec["risk_detail_box"]["font_pt"]),
+        )
+
+    add_textbox(
+        slide,
+        int(spec["footer_box"]["left"]),
+        int(spec["footer_box"]["top"]),
+        int(spec["footer_box"]["width"]),
+        int(spec["footer_box"]["height"]),
+        str(payload.get("footer", page.subtitle)),
+        size_pt=int(spec["footer_box"]["font_pt"]),
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+
+def _render_claim_breakdown(slide, page: BodyPageSpec, manifest: TemplateManifest):
+    spec = _layout(manifest, "claim_breakdown")
+    payload = page.payload
+    sub_rgb = _inactive_rgb(manifest)
+    add_textbox(
+        slide,
+        int(spec["headline_box"]["left"]),
+        int(spec["headline_box"]["top"]),
+        int(spec["headline_box"]["width"]),
+        int(spec["headline_box"]["height"]),
+        str(payload.get("headline", page.subtitle)),
+        size_pt=int(spec["headline_box"]["font_pt"]),
+        bold=True,
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+    claims = list(payload.get("claims", []))[: int(spec["claims_grid"]["columns"])]
+    for idx, claim in enumerate(claims):
+        left = int(spec["claims_grid"]["left"]) + idx * (
+            int(spec["claims_grid"]["card_width"]) + int(spec["claims_grid"]["gap_x"])
+        )
+        top = int(spec["claims_grid"]["top"])
+        card = slide.shapes.add_shape(
+            1,
+            left,
+            top,
+            int(spec["claims_grid"]["card_width"]),
+            int(spec["claims_grid"]["card_height"]),
+        )
+        card.fill.solid()
+        card.fill.fore_color.rgb = RGBColor(*_rgb(spec["claim_card"]["fill_rgb"]))
+        card.line.color.rgb = RGBColor(*_rgb(spec["claim_card"]["line_rgb"]))
+
+        add_textbox(
+            slide,
+            left + int(spec["claim_label_box"]["left_offset"]),
+            top + int(spec["claim_label_box"]["top_offset"]),
+            int(spec["claims_grid"]["card_width"]) - int(spec["claim_label_box"]["width_padding"]),
+            int(spec["claim_label_box"]["height"]),
+            str(claim.get("label", f"项目{idx + 1}")),
+            size_pt=int(spec["claim_label_box"]["font_pt"]),
+            bold=True,
+            color=sub_rgb,
+            align=PP_ALIGN.CENTER,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["claim_value_box"]["left_offset"]),
+            top + int(spec["claim_value_box"]["top_offset"]),
+            int(spec["claims_grid"]["card_width"]) - int(spec["claim_value_box"]["width_padding"]),
+            int(spec["claim_value_box"]["height"]),
+            str(claim.get("value", "--")),
+            size_pt=int(spec["claim_value_box"]["font_pt"]),
+            bold=True,
+            color=_rgb(spec["claim_value_box"]["text_rgb"]),
+            align=PP_ALIGN.CENTER,
+        )
+        add_textbox(
+            slide,
+            left + int(spec["claim_detail_box"]["left_offset"]),
+            top + int(spec["claim_detail_box"]["top_offset"]),
+            int(spec["claims_grid"]["card_width"]) - int(spec["claim_detail_box"]["width_padding"]),
+            int(spec["claim_detail_box"]["height"]),
+            normalize_text_for_box(str(claim.get("detail", "")), int(spec["claim_detail_box"]["wrap_chars"])),
+            size_pt=int(spec["claim_detail_box"]["font_pt"]),
+            color=sub_rgb,
+            align=PP_ALIGN.CENTER,
+        )
+
+    summary_band = slide.shapes.add_shape(
+        1,
+        int(spec["summary_band"]["left"]),
+        int(spec["summary_band"]["top"]),
+        int(spec["summary_band"]["width"]),
+        int(spec["summary_band"]["height"]),
+    )
+    summary_band.fill.solid()
+    summary_band.fill.fore_color.rgb = RGBColor(*_rgb(spec["summary_band"]["fill_rgb"]))
+    summary_band.line.color.rgb = RGBColor(*_rgb(spec["summary_band"]["line_rgb"]))
+    add_textbox(
+        slide,
+        int(spec["summary_band"]["text_left"]),
+        int(spec["summary_band"]["text_top"]),
+        int(spec["summary_band"]["text_width"]),
+        int(spec["summary_band"]["text_height"]),
+        str(payload.get("band_text", spec["summary_band"]["text"])),
+        size_pt=int(spec["summary_band"]["font_pt"]),
+        bold=True,
+        color=_rgb(spec["summary_band"]["text_rgb"]),
+        align=PP_ALIGN.CENTER,
+    )
+    add_textbox(
+        slide,
+        int(spec["summary_box"]["left"]),
+        int(spec["summary_box"]["top"]),
+        int(spec["summary_box"]["width"]),
+        int(spec["summary_box"]["height"]),
+        normalize_text_for_box(str(payload.get("summary", page.subtitle)), int(spec["summary_box"]["wrap_chars"])),
+        size_pt=int(spec["summary_box"]["font_pt"]),
+        align=PP_ALIGN.CENTER,
+    )
+    add_textbox(
+        slide,
+        int(spec["footer_box"]["left"]),
+        int(spec["footer_box"]["top"]),
+        int(spec["footer_box"]["width"]),
+        int(spec["footer_box"]["height"]),
+        str(payload.get("footer", page.subtitle)),
+        size_pt=int(spec["footer_box"]["font_pt"]),
+        color=sub_rgb,
+        align=PP_ALIGN.CENTER,
+    )
+
+
 PATTERN_RENDERERS = {
     "general_business": _render_cards_2x2,
     "process_flow": _render_process_flow,
@@ -912,6 +1392,10 @@ PATTERN_RENDERERS = {
     "capability_ring": _render_capability_ring,
     "five_phase_path": _render_five_phase_path,
     "pain_cards": _render_pain_cards,
+    "roadmap_timeline": _render_roadmap_timeline,
+    "kpi_dashboard": _render_kpi_dashboard,
+    "risk_matrix": _render_risk_matrix,
+    "claim_breakdown": _render_claim_breakdown,
 }
 
 

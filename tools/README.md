@@ -19,6 +19,8 @@ The `tools/` directory now separates day-to-day entrypoints from archived one-of
 ## Template and Reference Utilities
 
 - Template and reference utilities now live in [`tools/template_utils`](./template_utils/README.md)
+- `tools/template_utils/import_external_pptx_template.py`: export assets and fusion hints from external PPTX templates
+- `tools/template_utils/catalog_external_templates.py`: batch-scan a template directory and rank fusion candidates
 - `review_scoring.py`
 
 ## Scenario Generators

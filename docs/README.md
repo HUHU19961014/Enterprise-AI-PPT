@@ -18,6 +18,7 @@
 - [人工视觉检查](./HUMAN_VISUAL_QA.md)
 - [LLM 兼容说明](./LLM_COMPATIBILITY.md)
 - [参考样式库](./REFERENCE_STYLE_LIBRARY.md)
+- [外部模板融合方案](./TEMPLATE_FUSION_PLAN.md)
 - [结构优先架构](./STRUCTURE_FIRST_ARCHITECTURE.md)
 - [结构质量测试集](./STRUCTURE_QUALITY_TESTSET.md)
 - [深度调优说明](./DEEP_TUNING.md)

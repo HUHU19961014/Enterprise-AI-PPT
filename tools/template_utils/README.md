@@ -8,3 +8,5 @@ This folder contains utilities for inspecting, upgrading, or post-processing PPT
 - `update_template_version.ps1`
 - `apply_reference_body_slides.py`
 - `analyze_template.py`
+- `import_external_pptx_template.py`
+- `catalog_external_templates.py`

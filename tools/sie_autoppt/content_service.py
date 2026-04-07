@@ -4,8 +4,13 @@ import re
 
 from .models import DeckSpec, StructureArgument, StructureSection, StructureSpec
 from .planning.deck_planner import (
+    build_claim_items,
     build_body_page_spec,
+    build_dashboard_insights,
+    build_kpi_metrics,
     build_process_steps,
+    build_risk_items,
+    build_roadmap_stages,
     compact_text,
     concise_text,
     resolve_page_layout,
@@ -13,11 +18,15 @@ from .planning.deck_planner import (
 )
 
 
-SLIDE_SCHEMAS = ("conclusion", "comparison", "process", "cards")
+SLIDE_SCHEMAS = ("conclusion", "comparison", "process", "roadmap", "dashboard", "risk", "claim", "cards")
 
 _COMPARISON_KEYWORDS = ("对比", "比较", "差异", "升级", "替代", "现状 vs", "before", "after", "vs")
 _PROCESS_KEYWORDS = ("路径", "阶段", "步骤", "推进", "路线", "roadmap", "phase", "实施")
 _CONCLUSION_KEYWORDS = ("结论", "判断", "核心观点", "总体判断", "关键结论", "总结")
+_ROADMAP_KEYWORDS = ("路线图", "里程碑", "时间轴", "roadmap", "milestone", "季度")
+_DASHBOARD_KEYWORDS = ("kpi", "指标", "仪表盘", "经营", "表现", "增长", "dashboard", "scorecard")
+_RISK_KEYWORDS = ("风险", "概率", "影响", "矩阵", "risk")
+_CLAIM_KEYWORDS = ("索赔", "金额", "拆解", "claim", "成本", "预算")
 
 
 def _argument_text(argument: StructureArgument) -> str:
@@ -35,10 +44,18 @@ def map_structure_to_slide_schema(
     normalized_text = f"{structure_type} {title} {key_message}".lower()
     argument_count = len(arguments or [])
 
+    if any(keyword.lower() in normalized_text for keyword in _ROADMAP_KEYWORDS):
+        return "roadmap"
     if any(keyword.lower() in normalized_text for keyword in _PROCESS_KEYWORDS):
         return "process"
     if argument_count >= 4 and any(keyword.lower() in normalized_text for keyword in _COMPARISON_KEYWORDS):
         return "comparison"
+    if any(keyword.lower() in normalized_text for keyword in _DASHBOARD_KEYWORDS):
+        return "dashboard"
+    if any(keyword.lower() in normalized_text for keyword in _CLAIM_KEYWORDS):
+        return "claim"
+    if any(keyword.lower() in normalized_text for keyword in _RISK_KEYWORDS):
+        return "risk"
     if any(keyword.lower() in normalized_text for keyword in _CONCLUSION_KEYWORDS):
         return "conclusion"
     if structure_type in {"comparison_analysis"} and argument_count >= 4:
@@ -96,7 +113,53 @@ def _build_process_payload(section: StructureSection) -> dict[str, object]:
     }
 
 
+def _build_roadmap_payload(section: StructureSection) -> dict[str, object]:
+    items = [_argument_text(argument) for argument in section.arguments]
+    return {
+        "headline": concise_text(section.key_message, 34),
+        "footer": concise_text(section.key_message, 34),
+        "stages": build_roadmap_stages(items),
+    }
+
+
+def _build_dashboard_payload(section: StructureSection) -> dict[str, object]:
+    items = [_argument_text(argument) for argument in section.arguments]
+    return {
+        "headline": concise_text(section.key_message, 34),
+        "footer": concise_text(section.key_message, 34),
+        "metrics": build_kpi_metrics(items),
+        "insights": build_dashboard_insights(items[4:] or items),
+    }
+
+
+def _build_risk_payload(section: StructureSection) -> dict[str, object]:
+    items = [_argument_text(argument) for argument in section.arguments]
+    return {
+        "headline": concise_text(section.key_message, 34),
+        "footer": concise_text(section.key_message, 34),
+        "items": build_risk_items(items),
+    }
+
+
+def _build_claim_payload(section: StructureSection) -> dict[str, object]:
+    items = [_argument_text(argument) for argument in section.arguments]
+    return {
+        "headline": concise_text(section.key_message, 34),
+        "footer": concise_text(section.key_message, 34),
+        "claims": build_claim_items(items),
+        "summary": concise_text(section.key_message, 56),
+    }
+
+
 def _pattern_for_schema(schema_id: str, section: StructureSection) -> str:
+    if schema_id == "roadmap":
+        return "roadmap_timeline"
+    if schema_id == "dashboard":
+        return "kpi_dashboard"
+    if schema_id == "risk":
+        return "risk_matrix"
+    if schema_id == "claim":
+        return "claim_breakdown"
     if schema_id == "process":
         return "process_flow"
     if schema_id == "comparison":
@@ -107,6 +170,14 @@ def _pattern_for_schema(schema_id: str, section: StructureSection) -> str:
 
 
 def _payload_for_schema(schema_id: str, section: StructureSection) -> dict[str, object]:
+    if schema_id == "roadmap":
+        return _build_roadmap_payload(section)
+    if schema_id == "dashboard":
+        return _build_dashboard_payload(section)
+    if schema_id == "risk":
+        return _build_risk_payload(section)
+    if schema_id == "claim":
+        return _build_claim_payload(section)
     if schema_id == "process":
         return _build_process_payload(section)
     if schema_id == "comparison":

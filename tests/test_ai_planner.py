@@ -65,9 +65,65 @@ class AiPlannerTests(unittest.TestCase):
         self.assertEqual(deck.cover_title, "AI 自动化转型方案")
         self.assertEqual(
             [page.pattern_id for page in deck.body_pages],
-            ["pain_cards", "solution_architecture", "process_flow"],
+            ["pain_cards", "solution_architecture", "roadmap_timeline"],
         )
         self.assertEqual([page.page_key for page in deck.body_pages], ["ai_page_01", "ai_page_02", "ai_page_03"])
+
+    def test_build_deck_spec_from_ai_outline_supports_dashboard_and_roadmap(self):
+        deck = build_deck_spec_from_ai_outline(
+            {
+                "cover_title": "经营与推进总览",
+                "body_pages": [
+                    {
+                        "title": "核心指标",
+                        "subtitle": "经营表现摘要",
+                        "bullets": ["收入增速: 18%", "利润改善: +6%", "上线工厂: 12 个", "客户满意度: 92%"],
+                        "pattern_id": "kpi_dashboard",
+                        "nav_title": "指标",
+                    },
+                    {
+                        "title": "年度路线图",
+                        "subtitle": "按季度推进",
+                        "bullets": ["Q1: 完成现状诊断", "Q2: 完成平台建设", "Q3: 推进试点上线", "Q4: 规模复制推广"],
+                        "pattern_id": "roadmap_timeline",
+                        "nav_title": "路线图",
+                    },
+                ],
+            },
+            slide_bounds=AiSlideBounds(min_slides=2, max_slides=2),
+        )
+
+        self.assertEqual([page.pattern_id for page in deck.body_pages], ["kpi_dashboard", "roadmap_timeline"])
+        self.assertIn("metrics", deck.body_pages[0].payload)
+        self.assertIn("stages", deck.body_pages[1].payload)
+
+    def test_build_deck_spec_from_ai_outline_supports_risk_and_claim_breakdown(self):
+        deck = build_deck_spec_from_ai_outline(
+            {
+                "cover_title": "风险与金额分析",
+                "body_pages": [
+                    {
+                        "title": "关键风险",
+                        "subtitle": "风险矩阵",
+                        "bullets": ["汇率风险: 影响融资偿付", "政策风险: 影响审批进度", "执行风险: 影响交付节奏", "现金流风险: 影响后续投入"],
+                        "pattern_id": "risk_matrix",
+                        "nav_title": "风险",
+                    },
+                    {
+                        "title": "索赔拆解",
+                        "subtitle": "主项金额构成",
+                        "bullets": ["电费欠款: $2.1B", "违约利息: $1.3B", "汇率损失: $0.8B", "其他费用: $0.3B"],
+                        "pattern_id": "claim_breakdown",
+                        "nav_title": "索赔",
+                    },
+                ],
+            },
+            slide_bounds=AiSlideBounds(min_slides=2, max_slides=2),
+        )
+
+        self.assertEqual([page.pattern_id for page in deck.body_pages], ["risk_matrix", "claim_breakdown"])
+        self.assertIn("items", deck.body_pages[0].payload)
+        self.assertIn("claims", deck.body_pages[1].payload)
 
     def test_build_ai_planning_prompts_embed_topic_and_brief(self):
         developer_prompt, user_prompt = build_ai_planning_prompts(

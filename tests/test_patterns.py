@@ -28,6 +28,38 @@ class PatternInferenceTests(unittest.TestCase):
 
         self.assertEqual(pattern_id, "process_flow")
 
+    def test_infer_pattern_recognizes_roadmap_timeline(self):
+        pattern_id = infer_pattern(
+            "年度路线图与里程碑",
+            ["Q1: 完成诊断", "Q2: 建设平台", "Q3: 试点上线"],
+        )
+
+        self.assertEqual(pattern_id, "roadmap_timeline")
+
+    def test_infer_pattern_recognizes_kpi_dashboard(self):
+        pattern_id = infer_pattern(
+            "经营指标仪表盘",
+            ["收入增速: 18%", "毛利率: 32%", "重点项目: 12 个"],
+        )
+
+        self.assertEqual(pattern_id, "kpi_dashboard")
+
+    def test_infer_pattern_recognizes_risk_matrix(self):
+        pattern_id = infer_pattern(
+            "风险矩阵评估",
+            ["汇率波动", "政策不确定性", "执行延期风险"],
+        )
+
+        self.assertEqual(pattern_id, "risk_matrix")
+
+    def test_infer_pattern_recognizes_claim_breakdown(self):
+        pattern_id = infer_pattern(
+            "索赔金额拆解",
+            ["电费欠款: $2.1B", "违约利息: $1.3B", "汇率损失: $0.8B"],
+        )
+
+        self.assertEqual(pattern_id, "claim_breakdown")
+
     def test_infer_pattern_details_marks_low_confidence_generic_content(self):
         result = infer_pattern_details(
             "Executive overview",

@@ -5,8 +5,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from .theme_loader import available_theme_names
 
-SUPPORTED_THEMES = ("business_red", "tech_blue", "fresh_green")
+SUPPORTED_THEMES = tuple(available_theme_names())
 SUPPORTED_LAYOUTS = (
     "section_break",
     "title_only",

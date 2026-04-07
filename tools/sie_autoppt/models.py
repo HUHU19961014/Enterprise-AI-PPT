@@ -99,6 +99,56 @@ class PainCardsPagePayload(TypedDict, total=False):
     cards: list[PainCardPayload]
 
 
+class RoadmapStagePayload(TypedDict, total=False):
+    period: str
+    title: str
+    detail: str
+
+
+class RoadmapTimelinePagePayload(TypedDict, total=False):
+    headline: str
+    footer: str
+    stages: list[RoadmapStagePayload]
+
+
+class KpiMetricPayload(TypedDict, total=False):
+    label: str
+    value: str
+    detail: str
+
+
+class KpiDashboardPagePayload(TypedDict, total=False):
+    headline: str
+    footer: str
+    metrics: list[KpiMetricPayload]
+    insights: list[str]
+
+
+class RiskItemPayload(TypedDict, total=False):
+    title: str
+    detail: str
+    quadrant: str
+
+
+class RiskMatrixPagePayload(TypedDict, total=False):
+    headline: str
+    footer: str
+    items: list[RiskItemPayload]
+
+
+class ClaimItemPayload(TypedDict, total=False):
+    label: str
+    value: str
+    detail: str
+
+
+class ClaimBreakdownPagePayload(TypedDict, total=False):
+    headline: str
+    footer: str
+    claims: list[ClaimItemPayload]
+    summary: str
+
+
 BodyPagePayload: TypeAlias = (
     SolutionArchitecturePagePayload
     | ProcessFlowPagePayload
@@ -107,6 +157,10 @@ BodyPagePayload: TypeAlias = (
     | CapabilityRingPagePayload
     | FivePhasePathPagePayload
     | PainCardsPagePayload
+    | RoadmapTimelinePagePayload
+    | KpiDashboardPagePayload
+    | RiskMatrixPagePayload
+    | ClaimBreakdownPagePayload
     | dict[str, object]
 )
 

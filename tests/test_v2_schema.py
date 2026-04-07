@@ -2,12 +2,25 @@ import unittest
 
 from tools.sie_autoppt.v2.schema import (
     OutlineDocument,
+    SUPPORTED_THEMES,
     collect_deck_warnings,
     validate_deck_payload,
 )
 
 
 class V2SchemaTests(unittest.TestCase):
+    def test_supported_themes_are_discovered_from_theme_directory(self):
+        for theme_name in (
+            "business_red",
+            "tech_blue",
+            "fresh_green",
+            "google_brand_light",
+            "anthropic_orange",
+            "mckinsey_blue",
+            "consulting_navy",
+        ):
+            self.assertIn(theme_name, SUPPORTED_THEMES)
+
     def test_outline_document_requires_contiguous_page_numbers(self):
         with self.assertRaises(ValueError):
             OutlineDocument.model_validate(
@@ -22,6 +35,7 @@ class V2SchemaTests(unittest.TestCase):
     def test_validate_deck_payload_normalizes_defaults_and_collects_warnings(self):
         validated = validate_deck_payload(
             {
+                "meta": {"theme": "google_brand_light"},
                 "slides": [
                     {
                         "layout": "title_content",
