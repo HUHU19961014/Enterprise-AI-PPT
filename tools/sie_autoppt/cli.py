@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, load_clarifier_session
+from .clarify_web import serve_clarifier_web
 from .config import (
     DEFAULT_HTML,
     DEFAULT_OUTPUT_DIR,
@@ -49,6 +50,7 @@ from .v2 import (
     write_outline_document,
 )
 from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
+from .v2.visual_review import iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
 
 
@@ -99,6 +101,7 @@ def main():
             "ai-make",
             "ai-check",
             "clarify",
+            "clarify-web",
             "structure",
             "structure-plan",
             "structure-make",
@@ -106,6 +109,8 @@ def main():
             "v2-plan",
             "v2-render",
             "v2-make",
+            "v2-review",
+            "v2-iterate",
         ),
         default="make",
         help="Workflow stage to execute. Defaults to 'make' for backward compatibility.",
@@ -133,6 +138,8 @@ def main():
     parser.add_argument("--plan-output", default="", help="Optional output path for the generated DeckSpec JSON.")
     parser.add_argument("--log-output", default="", help="Optional output path for the generated V2 render log.")
     parser.add_argument("--ppt-output", default="", help="Optional output path for the generated V2 PPTX.")
+    parser.add_argument("--review-output-dir", default="", help="Optional output directory for visual review artifacts.")
+    parser.add_argument("--max-rounds", type=int, default=2, help="Maximum auto-fix review rounds for v2-iterate.")
     parser.add_argument(
         "--clarifier-state-file",
         default="",
@@ -159,6 +166,8 @@ def main():
         help=f"Optional exact number of body chapters to generate (1-{MAX_BODY_CHAPTERS}). If omitted, HTML <slide> input uses all detected pages.",
     )
     parser.add_argument("--active-start", type=int, default=0, help="Directory active chapter start index (0-based).")
+    parser.add_argument("--host", default="127.0.0.1", help="Host used by local web services such as clarify-web.")
+    parser.add_argument("--port", type=int, default=8765, help="Port used by local web services such as clarify-web.")
     args = parser.parse_args()
     validate_slide_args(args, parser)
 
@@ -188,6 +197,10 @@ def main():
         if args.clarifier_state_file:
             Path(args.clarifier_state_file).write_text(result.session.to_json(), encoding="utf-8")
         print(result.to_json())
+        return
+
+    if args.command == "clarify-web":
+        serve_clarifier_web(host=args.host, port=args.port)
         return
 
     if args.command == "v2-outline":
@@ -314,6 +327,41 @@ def main():
         print(str(result.warnings_path))
         print(str(result.log_path))
         print(str(result.pptx_path))
+        return
+
+    if args.command == "v2-review":
+        if not args.deck_json:
+            parser.error("--deck-json is required when command is 'v2-review'.")
+        review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review"
+        result = review_deck_once(
+            deck_path=Path(args.deck_json),
+            output_dir=review_output_dir,
+            model=args.llm_model or None,
+            theme_name=args.theme.strip() or None,
+        )
+        print(str(result.review_path))
+        print(str(result.patch_path))
+        print(str(result.deck_path))
+        print(str(result.pptx_path))
+        print(str(result.preview_dir))
+        return
+
+    if args.command == "v2-iterate":
+        if not args.deck_json:
+            parser.error("--deck-json is required when command is 'v2-iterate'.")
+        review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review_loop"
+        result = iterate_visual_review(
+            deck_path=Path(args.deck_json),
+            output_dir=review_output_dir,
+            model=args.llm_model or None,
+            max_rounds=max(1, args.max_rounds),
+            theme_name=args.theme.strip() or None,
+        )
+        print(str(result.final_review_path))
+        print(str(result.final_patch_path))
+        print(str(result.deck_path))
+        print(str(result.pptx_path))
+        print(str(result.preview_dir))
         return
 
     structure_request = None

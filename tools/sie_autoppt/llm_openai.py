@@ -1,6 +1,9 @@
 import json
+import mimetypes
 import os
 import time
+from base64 import b64encode
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
@@ -178,10 +181,24 @@ class OpenAIResponsesClient:
         schema_name: str,
         schema: dict[str, Any],
     ) -> dict[str, Any]:
+        return self.create_structured_json_with_user_items(
+            developer_prompt=developer_prompt,
+            user_items=[{"type": "text", "text": user_prompt}],
+            schema_name=schema_name,
+            schema=schema,
+        )
+
+    def create_structured_json_with_user_items(
+        self,
+        developer_prompt: str,
+        user_items: list[dict[str, Any]],
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
         if self._config.api_style == "chat_completions":
             return self._create_chat_completions_json(
                 developer_prompt=developer_prompt,
-                user_prompt=user_prompt,
+                user_items=user_items,
             )
         payload = {
             "model": self._config.model,
@@ -192,7 +209,7 @@ class OpenAIResponsesClient:
                 },
                 {
                     "role": "user",
-                    "content": [{"type": "input_text", "text": user_prompt}],
+                    "content": self._build_responses_user_content(user_items),
                 },
             ],
             "text": {
@@ -212,19 +229,43 @@ class OpenAIResponsesClient:
     def _create_chat_completions_json(
         self,
         developer_prompt: str,
-        user_prompt: str,
+        user_items: list[dict[str, Any]],
     ) -> dict[str, Any]:
         payload = {
             "model": self._config.model,
             "messages": [
                 {"role": "system", "content": developer_prompt},
-                {"role": "user", "content": f"{user_prompt}\n\nReturn only one valid JSON object."},
+                {"role": "user", "content": self._build_chat_user_content(user_items) + [{"type": "text", "text": "\n\nReturn only one valid JSON object."}]},
             ],
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         }
         response_payload = self._post_json("/chat/completions", payload)
         return extract_json_object_from_chat_completions_payload(response_payload)
+
+    def _build_responses_user_content(self, user_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        content: list[dict[str, Any]] = []
+        for item in user_items:
+            item_type = str(item.get("type", "")).strip().lower()
+            if item_type == "text":
+                content.append({"type": "input_text", "text": str(item.get("text", ""))})
+            elif item_type in {"image_path", "image"}:
+                content.append({"type": "input_image", "image_url": _image_path_to_data_url(Path(str(item.get("path", ""))))})
+            else:
+                raise OpenAIResponsesError(f"Unsupported user item type: {item_type}")
+        return content
+
+    def _build_chat_user_content(self, user_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        content: list[dict[str, Any]] = []
+        for item in user_items:
+            item_type = str(item.get("type", "")).strip().lower()
+            if item_type == "text":
+                content.append({"type": "text", "text": str(item.get("text", ""))})
+            elif item_type in {"image_path", "image"}:
+                content.append({"type": "image_url", "image_url": {"url": _image_path_to_data_url(Path(str(item.get("path", ""))))}})
+            else:
+                raise OpenAIResponsesError(f"Unsupported user item type: {item_type}")
+        return content
 
     def _post_json(self, route: str, payload: dict[str, Any]) -> dict[str, Any]:
         raw_body = json.dumps(payload).encode("utf-8")
@@ -283,3 +324,13 @@ class OpenAIResponsesClient:
         if self._config.project:
             headers["OpenAI-Project"] = self._config.project
         return headers
+
+
+def _image_path_to_data_url(path: Path) -> str:
+    if not path.exists():
+        raise OpenAIResponsesError(f"Image file does not exist: {path}")
+    mime_type, _ = mimetypes.guess_type(path.name)
+    if not mime_type:
+        mime_type = "image/png"
+    encoded = b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"

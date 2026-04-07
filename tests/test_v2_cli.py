@@ -114,3 +114,62 @@ class V2CliTests(unittest.TestCase):
             self.assertEqual(lines[3], str(Path(temp_dir) / "warnings.json"))
             self.assertEqual(lines[4], str(Path(temp_dir) / "log.txt"))
             self.assertEqual(lines[5], str(Path(temp_dir) / "generated.pptx"))
+
+    def test_v2_review_prints_five_artifact_paths(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-review", "--deck-json", "deck.json", "--review-output-dir", temp_dir]),
+                patch(
+                    "tools.sie_autoppt.cli.review_deck_once",
+                    return_value=type(
+                        "FakeReviewArtifacts",
+                        (),
+                        {
+                            "review_path": Path(temp_dir) / "review_once.json",
+                            "patch_path": Path(temp_dir) / "patches_review_once.json",
+                            "deck_path": Path(temp_dir) / "review_once.deck.json",
+                            "pptx_path": Path(temp_dir) / "review_once.pptx",
+                            "preview_dir": Path(temp_dir) / "previews_review_once",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(lines), 5)
+            self.assertTrue(lines[0].endswith("review_once.json"))
+            self.assertTrue(lines[1].endswith("patches_review_once.json"))
+            self.assertTrue(lines[2].endswith(".deck.json"))
+            self.assertTrue(lines[3].endswith(".pptx"))
+
+    def test_v2_iterate_prints_five_artifact_paths(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "v2-iterate", "--deck-json", "deck.json", "--review-output-dir", temp_dir, "--max-rounds", "2"]),
+                patch(
+                    "tools.sie_autoppt.cli.iterate_visual_review",
+                    return_value=type(
+                        "FakeLoopArtifacts",
+                        (),
+                        {
+                            "final_review_path": Path(temp_dir) / "review_round_2.json",
+                            "final_patch_path": Path(temp_dir) / "patches_round_2.json",
+                            "deck_path": Path(temp_dir) / "review_round_1_patched.deck.json",
+                            "pptx_path": Path(temp_dir) / "review_round_2.pptx",
+                            "preview_dir": Path(temp_dir) / "previews_round_2",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(lines), 5)
+            self.assertTrue(lines[0].endswith("review_round_2.json"))
+            self.assertTrue(lines[1].endswith("patches_round_2.json"))
+            self.assertTrue(lines[3].endswith(".pptx"))
