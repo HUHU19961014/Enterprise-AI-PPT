@@ -5,6 +5,42 @@ from tools.sie_autoppt.v2.schema import validate_deck_payload
 
 
 class V2QualityChecksTests(unittest.TestCase):
+    def test_directory_style_check_ignores_conclusion_titles(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {
+                    "title": "测试标题",
+                    "theme": "business_red",
+                    "language": "zh-CN",
+                    "author": "AI Auto PPT",
+                    "version": "2.0",
+                },
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_only",
+                        "title": "下月目标不是简单冲规模，而是提升重点客户推进质量",
+                    },
+                    {
+                        "slide_id": "s2",
+                        "layout": "title_only",
+                        "title": "Q2 的核心目标是守住利润率并恢复交付节奏",
+                    },
+                    {
+                        "slide_id": "s3",
+                        "layout": "title_only",
+                        "title": "建设背景",
+                    },
+                ],
+            }
+        )
+
+        warnings = check_deck_content(validated.deck)
+        directory_style_warnings = [item.message for item in warnings if "directory-style" in item.message]
+
+        self.assertEqual(len(directory_style_warnings), 1)
+        self.assertIn("建设背景", directory_style_warnings[0])
+
     def test_content_checks_emit_structured_warnings(self):
         validated = validate_deck_payload(
             {

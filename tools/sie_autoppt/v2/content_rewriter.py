@@ -18,6 +18,7 @@ TWO_COLUMNS_TARGET = 5
 
 FIXABLE_PATTERNS = (
     "title contains",
+    "appears to be directory-style",
     "bullet items",
     "bullet ",
     "title_image has",
@@ -42,6 +43,34 @@ FILLER_PATTERNS = (
     r"推动",
     r"推进",
 )
+
+DIRECTORY_STYLE_WARNING = "appears to be directory-style"
+CONCLUSION_MARKERS = (
+    "需要",
+    "需",
+    "应",
+    "将",
+    "已",
+    "已经",
+    "正在",
+    "不是",
+    "而是",
+    "成为",
+    "转向",
+    "推动",
+    "提升",
+    "恢复",
+    "守住",
+    "聚焦",
+    "建立",
+    "形成",
+    "支撑",
+    "依赖",
+    "本质",
+    "意味着",
+)
+TITLE_SPLIT_PATTERN = re.compile(r"[，,。；;：:、]")
+PHASE_PREFIX_PATTERN = re.compile(r"^第[一二三四五六七八九十0-9]+阶段")
 
 
 @dataclass(frozen=True)
@@ -131,6 +160,36 @@ def _compress_text(text: str, max_length: int) -> str:
     return _truncate_text(compact, max_length)
 
 
+def _split_title_fragments(text: str) -> list[str]:
+    return [fragment.strip(" ，,。；;：:、") for fragment in TITLE_SPLIT_PATTERN.split(text) if fragment.strip(" ，,。；;：:、")]
+
+
+def _is_conclusion_like(text: str) -> bool:
+    return any(marker in text for marker in CONCLUSION_MARKERS)
+
+
+def _strip_phase_prefix(text: str) -> str:
+    cleaned = PHASE_PREFIX_PATTERN.sub("", _normalize_text(text)).lstrip(" ：:，,、")
+    return cleaned or _normalize_text(text)
+
+
+def _compress_title_text(text: str, max_length: int) -> str:
+    normalized = _cleanup_text(_strip_parenthetical(_strip_phase_prefix(text)))
+    if len(normalized) <= max_length:
+        return normalized
+
+    fragments = _split_title_fragments(normalized)
+    conclusion_fragments = [fragment for fragment in fragments if len(fragment) <= max_length and _is_conclusion_like(fragment)]
+    if conclusion_fragments:
+        return max(conclusion_fragments, key=len)
+
+    concise_fragments = [fragment for fragment in fragments if len(fragment) <= max_length]
+    if concise_fragments:
+        return max(concise_fragments, key=len)
+
+    return _compress_text(normalized, max_length)
+
+
 def _merge_items(items: list[str], target_count: int, max_length: int) -> list[str]:
     merged = [_cleanup_text(item) for item in items if _cleanup_text(item)]
     while len(merged) > target_count and len(merged) >= 2:
@@ -157,19 +216,137 @@ def _group_issues_by_slide(issues: tuple[ContentWarning, ...]) -> dict[str, list
     return grouped
 
 
-def _rewrite_title(slide_id: str, title: str, actions: list[RewriteAction]) -> str:
-    rewritten = _compress_text(title, TITLE_LIMIT)
-    if rewritten != title:
+def _title_candidates(slide: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    subtitle = _normalize_text(str(slide.get("subtitle", "")))
+    if subtitle:
+        candidates.append(subtitle)
+
+    layout = str(slide.get("layout", ""))
+    if layout in {"title_content", "title_image"}:
+        candidates.extend(_normalize_text(item) for item in slide.get("content", []) if _normalize_text(item))
+    elif layout == "two_columns":
+        left = slide.get("left", {}) if isinstance(slide.get("left"), dict) else {}
+        right = slide.get("right", {}) if isinstance(slide.get("right"), dict) else {}
+        candidates.extend(_normalize_text(item) for item in left.get("items", []) if _normalize_text(item))
+        candidates.extend(_normalize_text(item) for item in right.get("items", []) if _normalize_text(item))
+
+    return candidates
+
+
+def _derive_directory_style_title(slide: dict[str, Any]) -> str:
+    original_title = _normalize_text(str(slide.get("title", "")))
+    for candidate in _title_candidates(slide):
+        rewritten = _compress_title_text(candidate, TITLE_LIMIT)
+        if rewritten and rewritten != original_title:
+            return rewritten
+    return ""
+
+
+def _refine_title_related_content(slide: dict[str, Any], actions: list[RewriteAction]) -> None:
+    slide_id = str(slide.get("slide_id", "unknown"))
+    title = _normalize_text(str(slide.get("title", "")))
+    layout = str(slide.get("layout", ""))
+
+    if layout == "section_break":
+        subtitle = _normalize_text(str(slide.get("subtitle", "")))
+        if not subtitle:
+            return
+        if subtitle == title:
+            actions.append(
+                RewriteAction(
+                    slide_id=slide_id,
+                    field="subtitle",
+                    action="drop_duplicate_subtitle_after_title_rewrite",
+                    before=subtitle,
+                    after="",
+                )
+            )
+            slide["subtitle"] = None
+            return
+        fragments = _split_title_fragments(subtitle)
+        supporting_fragment = next((fragment for fragment in fragments if fragment != title), "")
+        if supporting_fragment and title in fragments and supporting_fragment != subtitle:
+            actions.append(
+                RewriteAction(
+                    slide_id=slide_id,
+                    field="subtitle",
+                    action="refine_subtitle_after_title_rewrite",
+                    before=subtitle,
+                    after=supporting_fragment,
+                )
+            )
+            slide["subtitle"] = supporting_fragment
+        return
+
+    if layout in {"title_content", "title_image"}:
+        content = list(slide.get("content", []))
+        deduped = [item for item in content if _normalize_text(item) != title]
+        if deduped and deduped != content:
+            actions.append(
+                RewriteAction(
+                    slide_id=slide_id,
+                    field="content",
+                    action="remove_title_duplicate_item",
+                    before=content,
+                    after=deduped,
+                )
+            )
+            slide["content"] = deduped
+        return
+
+    if layout == "two_columns":
+        for column_name in ("left", "right"):
+            column = slide.get(column_name, {})
+            if not isinstance(column, dict):
+                continue
+            items = list(column.get("items", []))
+            deduped = [item for item in items if _normalize_text(item) != title]
+            if deduped and deduped != items:
+                actions.append(
+                    RewriteAction(
+                        slide_id=slide_id,
+                        field=f"{column_name}.items",
+                        action="remove_title_duplicate_item",
+                        before=items,
+                        after=deduped,
+                    )
+                )
+                column["items"] = deduped
+                slide[column_name] = column
+
+
+def _rewrite_title(slide: dict[str, Any], issue_messages: list[str], actions: list[RewriteAction]) -> str:
+    slide_id = str(slide.get("slide_id", "unknown"))
+    title = str(slide.get("title", ""))
+    rewritten = title
+
+    if any(DIRECTORY_STYLE_WARNING in message for message in issue_messages):
+        candidate = _derive_directory_style_title(slide)
+        if candidate and candidate != rewritten:
+            actions.append(
+                RewriteAction(
+                    slide_id=slide_id,
+                    field="title",
+                    action="rewrite_directory_style_title",
+                    before=rewritten,
+                    after=candidate,
+                )
+            )
+            rewritten = candidate
+
+    compressed = _compress_title_text(rewritten, TITLE_LIMIT)
+    if compressed != rewritten:
         actions.append(
             RewriteAction(
                 slide_id=slide_id,
                 field="title",
                 action="compress_title",
-                before=title,
-                after=rewritten,
+                before=rewritten,
+                after=compressed,
             )
         )
-    return rewritten
+    return compressed
 
 
 def _rewrite_content_items(
@@ -313,8 +490,9 @@ def rewrite_slide(slide_data: dict[str, Any], issues: list[ContentWarning]) -> t
     layout = updated.get("layout", "")
     slide_id = str(updated.get("slide_id", "unknown"))
 
-    if any("title contains" in message for message in issue_messages):
-        updated["title"] = _rewrite_title(slide_id, str(updated.get("title", "")), actions)
+    if any("title contains" in message or DIRECTORY_STYLE_WARNING in message for message in issue_messages):
+        updated["title"] = _rewrite_title(updated, issue_messages, actions)
+        _refine_title_related_content(updated, actions)
 
     if layout == "title_content":
         content = list(updated.get("content", []))

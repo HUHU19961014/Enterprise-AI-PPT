@@ -7,8 +7,10 @@ from .common import (
     add_bullet_list,
     add_card,
     add_page_number,
+    add_timeline_flow,
     add_textbox,
     fill_background,
+    parse_timeline_items,
     resolve_body_font_size,
 )
 
@@ -29,18 +31,31 @@ def render_title_content(prs, slide_data: TitleContentSlide, theme: ThemeSpec, l
         bold=True,
     )
     add_card(slide, 0.78, 1.28, 11.72, 4.95, theme)
-    font_size = resolve_body_font_size(theme, len(slide_data.content))
-    if len(slide_data.content) > 6:
-        log.warn(f"{slide_data.slide_id}: content is dense, reduced bullet font size to {font_size}.")
-    add_bullet_list(
-        slide,
-        slide_data.content,
-        left=1.02,
-        top=1.6,
-        width=11.1,
-        height=4.25,
-        theme=theme,
-        font_size=font_size,
-    )
+    timeline_items = parse_timeline_items(list(slide_data.content))
+    if timeline_items:
+        log.info(f"{slide_data.slide_id}: rendered staged content as timeline visualization.")
+        add_timeline_flow(
+            slide,
+            timeline_items,
+            left=1.0,
+            top=1.55,
+            width=11.06,
+            height=4.2,
+            theme=theme,
+        )
+    else:
+        font_size = resolve_body_font_size(theme, len(slide_data.content))
+        if len(slide_data.content) > 6:
+            log.warn(f"{slide_data.slide_id}: content is dense, reduced bullet font size to {font_size}.")
+        add_bullet_list(
+            slide,
+            slide_data.content,
+            left=1.02,
+            top=1.6,
+            width=11.1,
+            height=4.25,
+            theme=theme,
+            font_size=font_size,
+        )
     add_page_number(slide, slide_number, total_slides, theme)
     return slide

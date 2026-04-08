@@ -98,16 +98,76 @@ def _count_hanzi(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fff]", text))
 
 
-# Directory-style keywords that indicate non-conclusive titles
-DIRECTORY_KEYWORDS = {
-    "背景", "问题", "方案", "架构", "路径", "现状", "分析", "介绍",
-    "概述", "说明", "目标", "计划", "总结", "展望"
+# Titles that usually behave like table-of-contents labels instead of business conclusions.
+DIRECTORY_STYLE_EXACT_TITLES = {
+    "建设背景",
+    "现状问题",
+    "方案架构",
+    "实施路径",
+    "培训目标",
+    "问题识别",
 }
+
+DIRECTORY_STYLE_SUFFIXES = (
+    "背景",
+    "问题",
+    "架构",
+    "路径",
+    "分析",
+    "介绍",
+    "说明",
+    "目标",
+    "计划",
+    "展望",
+    "识别",
+)
+
+CONCLUSION_MARKERS = (
+    "需要",
+    "需",
+    "应",
+    "将",
+    "已",
+    "已经",
+    "正在",
+    "不是",
+    "而是",
+    "成为",
+    "转向",
+    "推动",
+    "提升",
+    "恢复",
+    "守住",
+    "聚焦",
+    "建立",
+    "形成",
+    "支撑",
+    "依赖",
+    "本质",
+    "意味着",
+)
+
+
+def _normalize_title_for_pattern(title: str) -> str:
+    return re.sub(r"[\s:：，,。.、（）()\-]+", "", title)
+
+
+def _looks_conclusion_oriented(title: str) -> bool:
+    if any(marker in title for marker in CONCLUSION_MARKERS):
+        return True
+    return "，" in title and _count_hanzi(title) >= 10
 
 
 def _has_directory_style_title(title: str) -> bool:
-    """Check if title contains directory-style keywords."""
-    return any(keyword in title for keyword in DIRECTORY_KEYWORDS)
+    """Check if title looks like a section heading instead of a business conclusion."""
+    normalized = _normalize_title_for_pattern(title)
+    if not normalized:
+        return False
+    if _looks_conclusion_oriented(title):
+        return False
+    if normalized in DIRECTORY_STYLE_EXACT_TITLES:
+        return True
+    return _count_hanzi(normalized) <= 8 and any(normalized.endswith(suffix) for suffix in DIRECTORY_STYLE_SUFFIXES)
 
 
 def _title_warnings(slide) -> list[ContentWarning]:
