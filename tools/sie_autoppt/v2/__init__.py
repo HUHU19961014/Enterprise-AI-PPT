@@ -3,15 +3,21 @@ from .io import (
     build_log_output_path,
     build_outline_output_path,
     build_ppt_output_path,
+    build_semantic_output_path,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
     default_ppt_output_path,
+    default_semantic_output_path,
+    is_semantic_deck_document,
     load_deck_document,
     load_outline_document,
+    load_semantic_document,
     write_deck_document,
+    write_semantic_document,
     write_outline_document,
 )
+from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .content_rewriter import RewriteAction, RewriteDeckResult, rewrite_deck, rewrite_slide, write_rewrite_log
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import (
@@ -42,6 +48,7 @@ from .services import (
     V2MakeArtifacts,
     generate_deck_with_ai,
     generate_outline_with_ai,
+    generate_semantic_deck_with_ai,
     make_v2_ppt,
 )
 from .theme_loader import ThemeSpec, available_theme_names, load_theme
@@ -69,6 +76,8 @@ __all__ = [
     "build_log_output_path",
     "build_outline_output_path",
     "build_ppt_output_path",
+    "build_semantic_output_path",
+    "build_semantic_deck_schema",
     "collect_deck_warnings",
     "check_deck_content",
     "check_slide_content",
@@ -77,11 +86,16 @@ __all__ = [
     "default_log_output_path",
     "default_outline_output_path",
     "default_ppt_output_path",
+    "default_semantic_output_path",
+    "compile_semantic_deck_payload",
     "generate_deck_with_ai",
     "generate_outline_with_ai",
+    "generate_semantic_deck_with_ai",
     "generate_ppt",
+    "is_semantic_deck_document",
     "load_deck_document",
     "load_outline_document",
+    "load_semantic_document",
     "load_theme",
     "make_v2_ppt",
     "normalize_deck_payload",
@@ -90,6 +104,7 @@ __all__ = [
     "rewrite_slide",
     "validate_deck_payload",
     "write_deck_document",
+    "write_semantic_document",
     "write_outline_document",
     "write_quality_gate_result",
     "write_rewrite_log",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, load_clarifier_session
@@ -36,15 +37,20 @@ from .v2 import (
     build_log_output_path,
     build_outline_output_path,
     build_ppt_output_path,
+    build_semantic_output_path,
+    compile_semantic_deck_payload,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
     default_ppt_output_path,
+    default_semantic_output_path,
     generate_deck_with_ai,
     generate_outline_with_ai,
+    generate_semantic_deck_with_ai,
     generate_ppt as generate_v2_ppt,
     load_deck_document,
     load_outline_document,
+    write_semantic_document,
     make_v2_ppt,
     write_deck_document,
     write_outline_document,
@@ -52,6 +58,29 @@ from .v2 import (
 from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
 from .v2.visual_review import iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
+
+
+WORKFLOW_COMMANDS = (
+    "make",
+    "plan",
+    "render",
+    "ai-plan",
+    "ai-make",
+    "ai-check",
+    "clarify",
+    "clarify-web",
+    "structure",
+    "structure-plan",
+    "structure-make",
+    "v2-outline",
+    "v2-plan",
+    "v2-compile",
+    "v2-render",
+    "v2-make",
+    "v2-review",
+    "v2-iterate",
+)
+LEGACY_COMMANDS = {"ai-plan", "ai-make", "structure", "structure-plan", "structure-make"}
 
 
 def load_brief_text(brief: str, brief_file: str) -> str:
@@ -76,7 +105,7 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
         "v2-outline",
         "v2-plan",
         "v2-make",
-    } or bool(getattr(args, "full_pipeline", False))
+    } or bool(getattr(args, "full_pipeline", False)) or (args.command == "make" and bool(args.topic.strip() or args.outline_json.strip()))
 
     if uses_ai_range and not is_ai_command:
         parser.error("--min-slides and --max-slides are only supported for ai-plan, ai-make, and ai-check.")
@@ -86,43 +115,64 @@ def validate_slide_args(args, parser: argparse.ArgumentParser):
         parser.error("--min-slides cannot be greater than --max-slides.")
 
 
+def command_was_explicit(argv: list[str]) -> bool:
+    for token in argv:
+        if token.startswith("-"):
+            continue
+        return token in WORKFLOW_COMMANDS
+    return False
+
+
+def resolve_effective_command(argv: list[str], args) -> tuple[str, bool]:
+    explicit = command_was_explicit(argv)
+    if args.full_pipeline:
+        return "v2-make", explicit
+    if explicit:
+        return args.command, explicit
+    if args.topic.strip() or args.outline_json.strip():
+        return "v2-make", explicit
+    return args.command, explicit
+
+
+def emit_command_notice(explicit: bool, parsed_command: str, effective_command: str) -> None:
+    if not explicit and effective_command == "v2-make" and parsed_command == "make":
+        print(
+            "INFO: No explicit command detected; routing topic-driven PPT generation to semantic v2-make.",
+            file=sys.stderr,
+        )
+        return
+    if effective_command in LEGACY_COMMANDS:
+        recommended = "v2-plan" if effective_command in {"ai-plan", "structure", "structure-plan"} else "v2-make"
+        print(
+            f"WARN: '{effective_command}' is a legacy workflow. Prefer '{recommended}' for the semantic pipeline (outline -> semantic -> compiled -> pptx).",
+            file=sys.stderr,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Plan and render SIE template-driven PPT from HTML, DeckSpec JSON, or natural-language AI input."
+        description="Plan and render SIE PPT from HTML, compiled deck JSON, semantic deck JSON, or natural-language AI input."
     )
     parser.add_argument(
         "command",
         nargs="?",
-        choices=(
-            "make",
-            "plan",
-            "render",
-            "ai-plan",
-            "ai-make",
-            "ai-check",
-            "clarify",
-            "clarify-web",
-            "structure",
-            "structure-plan",
-            "structure-make",
-            "v2-outline",
-            "v2-plan",
-            "v2-render",
-            "v2-make",
-            "v2-review",
-            "v2-iterate",
-        ),
+        choices=WORKFLOW_COMMANDS,
         default="make",
-        help="Workflow stage to execute. Defaults to 'make' for backward compatibility.",
+        help="Workflow stage to execute. Topic-driven invocations without an explicit command default to semantic 'v2-make'.",
     )
     parser.add_argument("--template", default=str(DEFAULT_TEMPLATE), help="Path to template PPTX.")
     parser.add_argument("--html", default=str(DEFAULT_HTML), help="Path to source HTML file.")
-    parser.add_argument("--deck-json", default="", help="Path to planned DeckSpec JSON file.")
+    parser.add_argument(
+        "--deck-json",
+        default="",
+        help="Path to a compiled deck JSON or V2 semantic deck JSON, depending on the command.",
+    )
     parser.add_argument("--topic", default="", help="Topic or natural-language request used by the AI planner.")
     parser.add_argument("--structure-json", default="", help="Path to a structure JSON file.")
     parser.add_argument("--outline-json", default="", help="Path to a V2 outline JSON file.")
     parser.add_argument("--structure-output", default="", help="Optional output path for the generated structure JSON.")
     parser.add_argument("--outline-output", default="", help="Optional output path for the generated V2 outline JSON.")
+    parser.add_argument("--semantic-output", default="", help="Optional output path for the generated V2 semantic deck JSON.")
     parser.add_argument("--brief", default="", help="Optional extra business context passed to the AI planner.")
     parser.add_argument("--brief-file", default="", help="Optional path to a text/markdown file with extra source material.")
     parser.add_argument("--audience", default=DEFAULT_AUDIENCE_HINT, help="Target audience hint for the AI planner.")
@@ -135,7 +185,7 @@ def main():
         default="",
         help="Optional external planner command. Reads JSON from stdin and must print JSON to stdout.",
     )
-    parser.add_argument("--plan-output", default="", help="Optional output path for the generated DeckSpec JSON.")
+    parser.add_argument("--plan-output", default="", help="Optional output path for the generated compiled deck JSON.")
     parser.add_argument("--log-output", default="", help="Optional output path for the generated V2 render log.")
     parser.add_argument("--ppt-output", default="", help="Optional output path for the generated V2 PPTX.")
     parser.add_argument("--review-output-dir", default="", help="Optional output directory for visual review artifacts.")
@@ -168,8 +218,11 @@ def main():
     parser.add_argument("--active-start", type=int, default=0, help="Directory active chapter start index (0-based).")
     parser.add_argument("--host", default="127.0.0.1", help="Host used by local web services such as clarify-web.")
     parser.add_argument("--port", type=int, default=8765, help="Port used by local web services such as clarify-web.")
+    raw_argv = sys.argv[1:]
     args = parser.parse_args()
     validate_slide_args(args, parser)
+    effective_command, explicit_command = resolve_effective_command(raw_argv, args)
+    emit_command_notice(explicit_command, args.command, effective_command)
 
     template_path = Path(args.template)
     html_path = Path(args.html)
@@ -180,7 +233,7 @@ def main():
     v2_theme = args.theme.strip() or "business_red"
     v2_output_dir = DEFAULT_V2_OUTPUT_DIR if output_dir == DEFAULT_OUTPUT_DIR else output_dir
 
-    if args.command == "clarify":
+    if effective_command == "clarify":
         if not args.topic.strip():
             parser.error("--topic is required when command is 'clarify'.")
         existing_session = None
@@ -199,11 +252,11 @@ def main():
         print(result.to_json())
         return
 
-    if args.command == "clarify-web":
+    if effective_command == "clarify-web":
         serve_clarifier_web(host=args.host, port=args.port)
         return
 
-    if args.command == "v2-outline":
+    if effective_command == "v2-outline":
         if not args.topic.strip():
             parser.error("--topic is required when command is 'v2-outline'.")
         outline = generate_outline_with_ai(
@@ -224,7 +277,7 @@ def main():
         print(str(outline_output))
         return
 
-    if args.command == "v2-plan":
+    if effective_command == "v2-plan":
         if not args.topic.strip() and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-plan'.")
         if args.outline_json:
@@ -246,7 +299,7 @@ def main():
             )
             outline_output = Path(args.outline_output) if args.outline_output else default_outline_output_path(v2_output_dir)
             write_outline_document(outline, outline_output)
-        validated_deck = generate_deck_with_ai(
+        semantic_payload = generate_semantic_deck_with_ai(
             DeckGenerationRequest(
                 topic=args.topic or "AI Auto PPT",
                 outline=outline,
@@ -258,19 +311,38 @@ def main():
             ),
             model=args.llm_model or None,
         )
+        validated_deck = compile_semantic_deck_payload(
+            semantic_payload,
+            default_title=args.topic or "AI Auto PPT",
+            default_theme=v2_theme,
+            default_language=args.language,
+            default_author=args.author,
+        )
+        semantic_output = Path(args.semantic_output) if args.semantic_output else default_semantic_output_path(v2_output_dir)
+        write_semantic_document(semantic_payload, semantic_output)
         deck_output = Path(args.plan_output) if args.plan_output else default_deck_output_path(v2_output_dir)
         write_deck_document(validated_deck.deck, deck_output)
         if outline_output is not None:
             print(str(outline_output))
+        print(str(semantic_output))
         print(str(deck_output))
         return
 
-    if args.command == "v2-render":
+    if effective_command == "v2-compile":
+        if not args.deck_json:
+            parser.error("--deck-json is required when command is 'v2-compile'.")
+        deck = load_deck_document(Path(args.deck_json))
+        deck_output = Path(args.plan_output) if args.plan_output else default_deck_output_path(v2_output_dir)
+        write_deck_document(deck, deck_output)
+        print(str(deck_output))
+        return
+
+    if effective_command == "v2-render":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'v2-render'.")
         log_output = Path(args.log_output) if args.log_output else default_log_output_path(v2_output_dir)
         ppt_output = Path(args.ppt_output) if args.ppt_output else default_ppt_output_path(v2_output_dir)
-        deck = json.loads(Path(args.deck_json).read_text(encoding="utf-8"))
+        deck = load_deck_document(Path(args.deck_json))
         render_result = generate_v2_ppt(
             deck,
             output_path=ppt_output,
@@ -283,7 +355,7 @@ def main():
         print(str(render_result.output_path))
         return
 
-    if args.command == "v2-make" or args.full_pipeline:
+    if effective_command == "v2-make":
         if not args.topic.strip() and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-make'.")
         result = make_v2_ppt(
@@ -304,6 +376,11 @@ def main():
                 if args.outline_output
                 else (default_outline_output_path(v2_output_dir) if args.full_pipeline else None)
             ),
+            semantic_output=(
+                Path(args.semantic_output)
+                if args.semantic_output
+                else (default_semantic_output_path(v2_output_dir) if args.full_pipeline else None)
+            ),
             deck_output=(
                 Path(args.plan_output)
                 if args.plan_output
@@ -322,6 +399,7 @@ def main():
             outline_path=Path(args.outline_json) if args.outline_json else None,
         )
         print(str(result.outline_path))
+        print(str(result.semantic_path))
         print(str(result.deck_path))
         print(str(result.rewrite_log_path))
         print(str(result.warnings_path))
@@ -329,7 +407,7 @@ def main():
         print(str(result.pptx_path))
         return
 
-    if args.command == "v2-review":
+    if effective_command == "v2-review":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'v2-review'.")
         review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review"
@@ -346,7 +424,7 @@ def main():
         print(str(result.preview_dir))
         return
 
-    if args.command == "v2-iterate":
+    if effective_command == "v2-iterate":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'v2-iterate'.")
         review_output_dir = Path(args.review_output_dir) if args.review_output_dir else v2_output_dir / "visual_review_loop"
@@ -376,7 +454,7 @@ def main():
             max_sections=args.max_slides or None,
         )
 
-    if args.command == "structure":
+    if effective_command == "structure":
         if structure_request is None:
             parser.error("--topic is required when command is 'structure'.")
         try:
@@ -392,7 +470,7 @@ def main():
         print(str(structure_output))
         return
 
-    if args.command == "structure-plan":
+    if effective_command == "structure-plan":
         if structure_request is None and not args.structure_json:
             parser.error("--topic or --structure-json is required when command is 'structure-plan'.")
         try:
@@ -412,7 +490,7 @@ def main():
         print(str(plan_output))
         return
 
-    if args.command == "plan":
+    if effective_command == "plan":
         plan_output = generate_plan_from_html(
             html_path=html_path,
             chapters=args.chapters,
@@ -423,7 +501,7 @@ def main():
         print(str(plan_output))
         return
 
-    if args.command == "ai-plan":
+    if effective_command == "ai-plan":
         if not args.topic.strip():
             parser.error("--topic is required when command is 'ai-plan'.")
         try:
@@ -448,7 +526,7 @@ def main():
         print(str(plan_output))
         return
 
-    if args.command == "ai-check":
+    if effective_command == "ai-check":
         check_topic = args.topic.strip() or "AI AutoPPT 健康检查"
         try:
             summary = run_ai_healthcheck(
@@ -469,7 +547,7 @@ def main():
         print(summary.to_json())
         return
 
-    if args.command == "render":
+    if effective_command == "render":
         if not args.deck_json:
             parser.error("--deck-json is required when command is 'render'.")
         result = render_from_deck_spec(
@@ -480,7 +558,7 @@ def main():
             active_start=args.active_start,
             output_dir=output_dir,
         )
-    elif args.command == "structure-make":
+    elif effective_command == "structure-make":
         if structure_request is None and not args.structure_json:
             parser.error("--topic or --structure-json is required when command is 'structure-make'.")
         try:
@@ -498,7 +576,7 @@ def main():
             )
         except (AiWorkflowError, ValueError) as exc:
             parser.exit(status=1, message=f"Structure workflow failed: {exc}\n")
-    elif args.command == "ai-make":
+    elif effective_command == "ai-make":
         if not args.topic.strip():
             parser.error("--topic is required when command is 'ai-make'.")
         try:

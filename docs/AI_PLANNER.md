@@ -2,6 +2,29 @@
 
 `SIE AutoPPT` now supports an AI planning stage that converts a natural-language topic into `DeckSpec JSON`.
 
+## Recommended Path
+
+The primary AI workflow is now the `v2` semantic pipeline:
+
+`outline.json -> semantic_deck.json -> compiled_deck.json -> pptx`
+
+```powershell
+python .\main.py v2-make `
+  --topic "制造行业数字化升级方案汇报"
+```
+
+If you invoke the CLI with `--topic` and no explicit command, the tool now defaults to semantic `v2-make`.
+
+If you want to materialize the compiled renderer deck separately, use:
+
+```powershell
+python .\main.py v2-compile `
+  --deck-json .\output\generated_semantic_deck.json `
+  --plan-output .\output\generated_deck.json
+```
+
+Legacy commands such as `ai-plan` and `ai-make` are still supported for compatibility, but they are no longer the recommended path for AI-driven content and layout.
+
 ## Commands
 
 Generate `DeckSpec JSON` from a topic:

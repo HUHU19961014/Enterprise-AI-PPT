@@ -109,6 +109,52 @@ class V2VisualReviewTests(unittest.TestCase):
         self.assertTrue(result.review_path.name.endswith(".json"))
         self.assertTrue(result.patch_path.name.endswith(".json"))
 
+    def test_review_once_preserves_semantic_input_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            semantic_path = Path(temp_dir) / "semantic.json"
+            semantic_path.write_text(
+                __import__("json").dumps(
+                    {
+                        "meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [
+                            {
+                                "slide_id": "s1",
+                                "title": "Conclusion",
+                                "intent": "conclusion",
+                                "blocks": [{"kind": "statement", "text": "Lead with the decision."}],
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            fake_render = type(
+                "FakeRender",
+                (),
+                {"output_path": Path(temp_dir) / "deck.pptx", "final_deck": validate_deck_payload({"meta": {"title": "Test Deck", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"}, "slides": [{"slide_id": "s1", "layout": "title_only", "title": "Conclusion"}]}).deck},
+            )()
+
+            with (
+                patch("tools.sie_autoppt.v2.visual_review.generate_ppt", return_value=fake_render),
+                patch("tools.sie_autoppt.v2.visual_review.export_slide_previews", return_value=[Path(temp_dir) / "slide1.png"]),
+                patch(
+                    "tools.sie_autoppt.v2.visual_review.review_rendered_deck",
+                    return_value={
+                        "scores": {"structure": 4, "title_quality": 4, "content_density": 4, "layout_stability": 4, "deliverability": 4},
+                        "total": 20,
+                        "rating": "鍚堟牸",
+                        "page_issues": [],
+                        "summary": "鏁翠綋绋冲畾锛屽彲缁х画浣滀负娴嬭瘯鏍蜂緥銆?",
+                    },
+                ),
+                patch("tools.sie_autoppt.v2.visual_review.generate_blocker_patches", return_value={"patches": []}),
+            ):
+                result = review_deck_once(deck_path=semantic_path, output_dir=Path(temp_dir) / "review")
+
+            self.assertIsNotNone(result.semantic_source_path)
+            self.assertTrue(result.semantic_source_path.exists())
+
     def test_iterate_visual_review_applies_blocker_patches(self):
         deck = _sample_deck()
         with tempfile.TemporaryDirectory() as temp_dir:

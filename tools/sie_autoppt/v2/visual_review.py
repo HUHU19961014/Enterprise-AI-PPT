@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
-from .io import load_deck_document, write_deck_document
+from .io import is_semantic_deck_document, load_deck_document, load_semantic_document, write_deck_document, write_semantic_document
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .schema import DeckDocument, validate_deck_payload
 
@@ -76,6 +76,7 @@ class VisualReviewArtifacts:
     preview_dir: Path
     final_review_path: Path
     final_patch_path: Path
+    semantic_source_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class SingleReviewArtifacts:
     deck_path: Path
     pptx_path: Path
     preview_dir: Path
+    semantic_source_path: Path | None = None
 
 
 def build_visual_review_schema() -> dict[str, Any]:
@@ -354,6 +356,12 @@ def _write_json(payload: dict[str, Any], path: Path) -> Path:
     return path
 
 
+def _preserve_semantic_source(deck_path: Path, output_dir: Path, target_name: str) -> Path | None:
+    if not is_semantic_deck_document(deck_path):
+        return None
+    return write_semantic_document(load_semantic_document(deck_path), output_dir / target_name)
+
+
 def iterate_visual_review(
     *,
     deck_path: Path,
@@ -363,6 +371,7 @@ def iterate_visual_review(
     theme_name: str | None = None,
 ) -> VisualReviewArtifacts:
     output_dir.mkdir(parents=True, exist_ok=True)
+    semantic_source_path = _preserve_semantic_source(deck_path, output_dir, "review_input.semantic.json")
     current_deck = load_deck_document(deck_path)
     current_deck_path = deck_path
     final_review_path = output_dir / "review_round_0.json"
@@ -417,6 +426,7 @@ def iterate_visual_review(
         preview_dir=final_preview_dir,
         final_review_path=final_review_path,
         final_patch_path=final_patch_path,
+        semantic_source_path=semantic_source_path,
     )
 
 
@@ -428,6 +438,7 @@ def review_deck_once(
     theme_name: str | None = None,
 ) -> SingleReviewArtifacts:
     output_dir.mkdir(parents=True, exist_ok=True)
+    semantic_source_path = _preserve_semantic_source(deck_path, output_dir, "review_once.semantic.json")
     deck = load_deck_document(deck_path)
     pptx_path = output_dir / "review_once.pptx"
     log_path = output_dir / "review_once.log.txt"
@@ -453,4 +464,5 @@ def review_deck_once(
         deck_path=deck_out_path,
         pptx_path=render_artifacts.output_path,
         preview_dir=preview_dir,
+        semantic_source_path=semantic_source_path,
     )

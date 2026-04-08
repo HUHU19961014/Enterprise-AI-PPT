@@ -9,16 +9,20 @@ from ..clarifier import DEFAULT_AUDIENCE_HINT
 from ..config import DEFAULT_OUTPUT_DIR
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..prompting import render_prompt_template
+from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
     build_deck_output_path,
     build_log_output_path,
     build_outline_output_path,
     build_ppt_output_path,
+    build_semantic_output_path,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
     default_ppt_output_path,
+    default_semantic_output_path,
     load_outline_document,
+    write_semantic_document,
     write_outline_document,
 )
 from .ppt_engine import generate_ppt
@@ -59,6 +63,7 @@ class DeckGenerationRequest:
 @dataclass(frozen=True)
 class V2MakeArtifacts:
     outline_path: Path
+    semantic_path: Path
     deck_path: Path
     log_path: Path
     rewrite_log_path: Path
@@ -134,135 +139,7 @@ def build_outline_prompts(
 
 
 def build_deck_schema() -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": {
-            "meta": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "minLength": 1, "maxLength": 80},
-                    "theme": {"type": "string", "enum": list(SUPPORTED_THEMES)},
-                    "language": {"type": "string", "minLength": 2, "maxLength": 16},
-                    "author": {"type": "string", "minLength": 1, "maxLength": 40},
-                    "version": {"type": "string", "minLength": 1, "maxLength": 10},
-                },
-                "required": ["title", "theme", "language", "author", "version"],
-                "additionalProperties": False,
-            },
-            "slides": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 20,
-                "items": {
-                    "anyOf": [
-                        {
-                            "type": "object",
-                            "properties": {
-                                "slide_id": {"type": "string", "minLength": 1, "maxLength": 40},
-                                "layout": {"const": "section_break"},
-                                "title": {"type": "string", "minLength": 2, "maxLength": 60},
-                                "subtitle": {"type": "string", "maxLength": 80},
-                            },
-                            "required": ["slide_id", "layout", "title"],
-                            "additionalProperties": False,
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "slide_id": {"type": "string", "minLength": 1, "maxLength": 40},
-                                "layout": {"const": "title_only"},
-                                "title": {"type": "string", "minLength": 2, "maxLength": 60},
-                            },
-                            "required": ["slide_id", "layout", "title"],
-                            "additionalProperties": False,
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "slide_id": {"type": "string", "minLength": 1, "maxLength": 40},
-                                "layout": {"const": "title_content"},
-                                "title": {"type": "string", "minLength": 2, "maxLength": 60},
-                                "content": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "maxItems": 10,
-                                    "items": {"type": "string", "minLength": 2, "maxLength": 60},
-                                },
-                            },
-                            "required": ["slide_id", "layout", "title", "content"],
-                            "additionalProperties": False,
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "slide_id": {"type": "string", "minLength": 1, "maxLength": 40},
-                                "layout": {"const": "two_columns"},
-                                "title": {"type": "string", "minLength": 2, "maxLength": 60},
-                                "left": {
-                                    "type": "object",
-                                    "properties": {
-                                        "heading": {"type": "string", "minLength": 1, "maxLength": 24},
-                                        "items": {
-                                            "type": "array",
-                                            "minItems": 1,
-                                            "maxItems": 6,
-                                            "items": {"type": "string", "minLength": 2, "maxLength": 50},
-                                        },
-                                    },
-                                    "required": ["heading", "items"],
-                                    "additionalProperties": False,
-                                },
-                                "right": {
-                                    "type": "object",
-                                    "properties": {
-                                        "heading": {"type": "string", "minLength": 1, "maxLength": 24},
-                                        "items": {
-                                            "type": "array",
-                                            "minItems": 1,
-                                            "maxItems": 6,
-                                            "items": {"type": "string", "minLength": 2, "maxLength": 50},
-                                        },
-                                    },
-                                    "required": ["heading", "items"],
-                                    "additionalProperties": False,
-                                },
-                            },
-                            "required": ["slide_id", "layout", "title", "left", "right"],
-                            "additionalProperties": False,
-                        },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "slide_id": {"type": "string", "minLength": 1, "maxLength": 40},
-                                "layout": {"const": "title_image"},
-                                "title": {"type": "string", "minLength": 2, "maxLength": 60},
-                                "content": {
-                                    "type": "array",
-                                    "minItems": 1,
-                                    "maxItems": 8,
-                                    "items": {"type": "string", "minLength": 2, "maxLength": 60},
-                                },
-                                "image": {
-                                    "type": "object",
-                                    "properties": {
-                                        "mode": {"type": "string", "enum": ["placeholder", "local_path"]},
-                                        "caption": {"type": "string", "maxLength": 40},
-                                        "path": {"type": "string", "maxLength": 240},
-                                    },
-                                    "required": ["mode"],
-                                    "additionalProperties": False,
-                                },
-                            },
-                            "required": ["slide_id", "layout", "title", "content", "image"],
-                            "additionalProperties": False,
-                        },
-                    ]
-                },
-            },
-        },
-        "required": ["meta", "slides"],
-        "additionalProperties": False,
-    }
+    return build_semantic_deck_schema()
 
 
 def build_deck_prompts(
@@ -328,6 +205,25 @@ def generate_deck_with_ai(
     model: str | None = None,
     max_attempts: int = 3,
 ) -> ValidatedDeck:
+    semantic_payload = generate_semantic_deck_with_ai(
+        request=request,
+        model=model,
+        max_attempts=max_attempts,
+    )
+    return compile_semantic_deck_payload(
+        semantic_payload,
+        default_title=request.topic,
+        default_theme=request.theme,
+        default_language=request.language,
+        default_author=request.author,
+    )
+
+
+def generate_semantic_deck_with_ai(
+    request: DeckGenerationRequest,
+    model: str | None = None,
+    max_attempts: int = 3,
+) -> dict[str, Any]:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
     config = load_openai_responses_config(model=model)
@@ -342,13 +238,14 @@ def generate_deck_with_ai(
             schema=build_deck_schema(),
         )
         try:
-            return validate_deck_payload(
+            compile_semantic_deck_payload(
                 payload,
                 default_title=request.topic,
                 default_theme=request.theme,
                 default_language=request.language,
                 default_author=request.author,
             )
+            return payload
         except ValueError as exc:
             feedback = (str(exc),)
     raise ValueError("Deck generation failed validation after 3 attempts: " + "; ".join(feedback))
@@ -369,6 +266,7 @@ def make_v2_ppt(
     output_prefix: str = "Enterprise-AI-PPT-V2",
     model: str | None = None,
     outline_output: Path | None = None,
+    semantic_output: Path | None = None,
     deck_output: Path | None = None,
     log_output: Path | None = None,
     ppt_output: Path | None = None,
@@ -395,7 +293,7 @@ def make_v2_ppt(
         final_outline_output = outline_output or default_outline_output_path(final_output_dir)
         write_outline_document(outline, final_outline_output)
 
-    validated_deck = generate_deck_with_ai(
+    semantic_payload = generate_semantic_deck_with_ai(
         DeckGenerationRequest(
             topic=topic,
             outline=outline,
@@ -406,6 +304,15 @@ def make_v2_ppt(
             author=author,
         ),
         model=model,
+    )
+    final_semantic_output = semantic_output or default_semantic_output_path(final_output_dir)
+    write_semantic_document(semantic_payload, final_semantic_output)
+    validated_deck = compile_semantic_deck_payload(
+        semantic_payload,
+        default_title=topic,
+        default_theme=theme,
+        default_language=language,
+        default_author=author,
     )
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
 
@@ -420,6 +327,7 @@ def make_v2_ppt(
     )
     return V2MakeArtifacts(
         outline_path=final_outline_output,
+        semantic_path=final_semantic_output,
         deck_path=render_result.deck_path or final_deck_output,
         log_path=final_log_output,
         rewrite_log_path=render_result.rewrite_log_path or (final_log_output.parent / "rewrite_log.json"),

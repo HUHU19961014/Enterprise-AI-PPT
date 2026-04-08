@@ -119,6 +119,15 @@ class CliTests(unittest.TestCase):
             self.assertEqual(payload["status"], "needs_clarification")
             self.assertTrue(payload["session"]["pending_dimensions"])
 
+    def test_clarify_web_starts_local_server_with_host_and_port(self):
+        with (
+            patch("sys.argv", ["sie-autoppt", "clarify-web", "--host", "127.0.0.1", "--port", "9001"]),
+            patch("tools.sie_autoppt.cli.serve_clarifier_web") as mocked_serve,
+        ):
+            cli.main()
+
+        mocked_serve.assert_called_once_with(host="127.0.0.1", port=9001)
+
     def test_structure_command_prints_generated_structure_path(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,3 +140,60 @@ class CliTests(unittest.TestCase):
                 cli.main()
 
         self.assertIn("sample.structure.json", stdout.getvalue())
+
+    def test_topic_without_explicit_command_routes_to_v2_make(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "--topic", "做一份装备制造数字化方案", "--output-dir", temp_dir]),
+                patch(
+                    "tools.sie_autoppt.cli.make_v2_ppt",
+                    return_value=type(
+                        "FakeArtifacts",
+                        (),
+                        {
+                            "outline_path": Path(temp_dir) / "generated_outline.json",
+                            "semantic_path": Path(temp_dir) / "generated_semantic_deck.json",
+                            "deck_path": Path(temp_dir) / "generated_deck.json",
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "log_path": Path(temp_dir) / "log.txt",
+                            "pptx_path": Path(temp_dir) / "Enterprise-AI-PPT_Presentation.pptx",
+                        },
+                    )(),
+                ) as make_mock,
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                cli.main()
+
+        make_mock.assert_called_once()
+        self.assertIn("semantic v2-make", stderr.getvalue())
+        self.assertIn("generated_semantic_deck.json", stdout.getvalue())
+
+    def test_ai_make_prints_legacy_warning(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "ai-make", "--topic", "做一份装备制造数字化方案", "--output-dir", temp_dir]),
+                patch(
+                    "tools.sie_autoppt.cli.render_from_ai_plan",
+                    return_value=type(
+                        "FakeRenderResult",
+                        (),
+                        {
+                            "report_path": Path(temp_dir) / "legacy.report.json",
+                            "output_path": Path(temp_dir) / "legacy.pptx",
+                            "render_trace": None,
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                cli.main()
+
+        self.assertIn("legacy workflow", stderr.getvalue())
+        self.assertIn("v2-make", stderr.getvalue())

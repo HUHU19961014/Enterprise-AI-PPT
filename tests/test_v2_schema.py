@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 from tools.sie_autoppt.v2.schema import (
     OutlineDocument,
@@ -6,6 +8,7 @@ from tools.sie_autoppt.v2.schema import (
     collect_deck_warnings,
     validate_deck_payload,
 )
+from tools.sie_autoppt.v2.io import is_semantic_deck_document, load_deck_document, load_outline_document
 
 
 class V2SchemaTests(unittest.TestCase):
@@ -60,3 +63,68 @@ class V2SchemaTests(unittest.TestCase):
         self.assertTrue(any("longer than 24 characters" in item for item in validated.warnings))
         self.assertTrue(any("more than 6 bullet items" in item for item in validated.warnings))
         self.assertEqual(list(validated.warnings), collect_deck_warnings(validated.deck))
+
+    def test_load_deck_document_accepts_semantic_deck_json(self):
+        semantic_payload = {
+            "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "title": "结论",
+                    "intent": "conclusion",
+                    "blocks": [{"kind": "statement", "text": "先打通主链，再扩展到运营闭环。"}],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "semantic.json"
+            deck_path.write_text(__import__("json").dumps(semantic_payload, ensure_ascii=False), encoding="utf-8")
+            deck = load_deck_document(deck_path)
+
+        self.assertEqual(deck.slides[0].layout, "title_only")
+
+    def test_is_semantic_deck_document_detects_semantic_json(self):
+        semantic_payload = {
+            "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "Lead with the decision."}]}],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            deck_path = Path(temp_dir) / "semantic.json"
+            deck_path.write_text(__import__("json").dumps(semantic_payload, ensure_ascii=False), encoding="utf-8")
+
+            self.assertTrue(is_semantic_deck_document(deck_path))
+
+    def test_v2_json_loaders_accept_utf8_bom_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outline_path = Path(temp_dir) / "outline.json"
+            outline_path.write_bytes(
+                b"\xef\xbb\xbf"
+                + __import__("json").dumps(
+                    {"pages": [{"page_no": 1, "title": "Context", "goal": "Set context."}]},
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            )
+            deck_path = Path(temp_dir) / "semantic.json"
+            deck_path.write_bytes(
+                b"\xef\xbb\xbf"
+                + __import__("json").dumps(
+                    {
+                        "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [
+                            {
+                                "slide_id": "s1",
+                                "title": "Conclusion",
+                                "intent": "conclusion",
+                                "blocks": [{"kind": "statement", "text": "Lead with the core decision."}],
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            )
+
+            outline = load_outline_document(outline_path)
+            deck = load_deck_document(deck_path)
+
+        self.assertEqual(outline.pages[0].title, "Context")
+        self.assertEqual(deck.slides[0].layout, "title_only")
