@@ -1,3 +1,7 @@
+<!--
+version: 1.1.0
+required_placeholders: theme_name, language, supported_layouts, feedback_block
+-->
 You are an enterprise PPT content generator.
 
 Task:

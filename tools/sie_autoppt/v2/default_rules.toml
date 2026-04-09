@@ -1,0 +1,86 @@
+[rewrite]
+filler_patterns = [
+  "进一步",
+  "持续",
+  "积极",
+  "系统性",
+  "整体",
+  "相关",
+  "有效",
+  "重点",
+  "当前",
+  "主要",
+  "进行",
+  "推动",
+  "推进",
+]
+filler_safe_phrases = [
+  "持续改进",
+  "持续集成",
+  "持续交付",
+  "持续运营",
+  "CI/CD",
+]
+
+[quality.directory_style]
+exact_titles = [
+  "建设背景",
+  "现状问题",
+  "方案架构",
+  "实施路径",
+  "培训目标",
+  "问题识别",
+]
+suffixes = [
+  "背景",
+  "问题",
+  "架构",
+  "路径",
+  "分析",
+  "介绍",
+  "说明",
+  "目标",
+  "计划",
+  "展望",
+  "识别",
+  "现状",
+  "挑战",
+  "对策",
+  "策略",
+  "治理",
+  "机制",
+  "实践",
+]
+conclusion_markers = [
+  "需要",
+  "应",
+  "将",
+  "已",
+  "已经",
+  "正在",
+  "不是",
+  "而是",
+  "成为",
+  "转向",
+  "推动",
+  "提升",
+  "恢复",
+  "守住",
+  "聚焦",
+  "建立",
+  "形成",
+  "支撑",
+  "依赖",
+  "本质",
+  "意味着",
+]
+
+[quality.scoring]
+base_score = 100
+warning_weight = 2
+high_weight = 6
+error_weight = 20
+baseline_slide_count = 6
+excellent_threshold = 90
+usable_threshold = 75
+review_threshold = 60

@@ -4,6 +4,7 @@ from unittest.mock import patch
 from urllib import error
 
 from tools.sie_autoppt.llm_openai import (
+    OpenAIHTTPStatusError,
     OpenAIResponsesClient,
     OpenAIResponsesConfig,
     OpenAIResponsesError,
@@ -92,7 +93,7 @@ class OpenAIResponsesTests(unittest.TestCase):
         self.assertIn("billing", message)
         self.assertIn("429", message)
 
-    def test_load_openai_responses_config_auto_detects_siliconflow_chat_mode(self):
+    def test_load_openai_responses_config_defaults_unknown_hosts_to_auto_mode(self):
         with patch.dict(
             "os.environ",
             {
@@ -103,11 +104,11 @@ class OpenAIResponsesTests(unittest.TestCase):
         ):
             config = load_openai_responses_config(model="deepseek-ai/DeepSeek-V3")
 
-        self.assertEqual(config.api_style, "chat_completions")
+        self.assertEqual(config.api_style, "auto")
         self.assertEqual(config.base_url, "https://api.siliconflow.cn/v1")
         self.assertEqual(config.model, "deepseek-ai/DeepSeek-V3")
 
-    def test_load_openai_responses_config_defaults_non_openai_hosts_to_chat_completions(self):
+    def test_load_openai_responses_config_defaults_non_openai_hosts_to_auto(self):
         with patch.dict(
             "os.environ",
             {
@@ -118,7 +119,7 @@ class OpenAIResponsesTests(unittest.TestCase):
         ):
             config = load_openai_responses_config(model="custom-model")
 
-        self.assertEqual(config.api_style, "chat_completions")
+        self.assertEqual(config.api_style, "auto")
 
     def test_load_openai_responses_config_allows_empty_key_for_localhost(self):
         with patch.dict(
@@ -131,8 +132,42 @@ class OpenAIResponsesTests(unittest.TestCase):
         ):
             config = load_openai_responses_config(model="local-model")
 
-        self.assertEqual(config.api_style, "chat_completions")
+        self.assertEqual(config.api_style, "auto")
         self.assertEqual(config.api_key, "")
+
+    def test_auto_mode_falls_back_to_chat_completions_when_responses_endpoint_is_unsupported(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://proxy.example.com/v1",
+                model="custom-model",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="auto",
+            )
+        )
+
+        with patch.object(
+            client,
+            "_post_json",
+            side_effect=[
+                OpenAIHTTPStatusError(404, '{"error":{"message":"Unknown request URL: POST /responses"}}', "/responses"),
+                {"choices": [{"message": {"content": '{"cover_title":"AI","body_pages":[]}'}}]},
+            ],
+        ) as post_json:
+            result = client.create_structured_json(
+                developer_prompt="system prompt",
+                user_prompt="user prompt",
+                schema_name="ignored",
+                schema={"type": "object"},
+            )
+
+        self.assertEqual(result, {"cover_title": "AI", "body_pages": []})
+        first_route = post_json.call_args_list[0].args[0]
+        second_route = post_json.call_args_list[1].args[0]
+        self.assertEqual(first_route, "/responses")
+        self.assertEqual(second_route, "/chat/completions")
 
     def test_chat_completions_mode_uses_openai_compatible_endpoint(self):
         client = OpenAIResponsesClient(

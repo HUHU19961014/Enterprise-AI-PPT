@@ -64,6 +64,52 @@ class V2SchemaTests(unittest.TestCase):
         self.assertTrue(any("more than 6 bullet items" in item for item in validated.warnings))
         self.assertEqual(list(validated.warnings), collect_deck_warnings(validated.deck))
 
+    def test_validate_deck_payload_accepts_specialized_layouts(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {"title": "Sample Deck", "theme": "google_brand_light", "language": "en", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "layout": "timeline",
+                        "title": "Roadmap",
+                        "stages": [
+                            {"title": "Q1", "detail": "Align scope"},
+                            {"title": "Q2", "detail": "Build workflows"},
+                        ],
+                    },
+                    {
+                        "layout": "stats_dashboard",
+                        "title": "KPI Dashboard",
+                        "metrics": [
+                            {"label": "OTD", "value": "95%"},
+                            {"label": "Yield", "value": "98%"},
+                        ],
+                    },
+                    {
+                        "layout": "matrix_grid",
+                        "title": "Risk Matrix",
+                        "cells": [
+                            {"title": "Low-Low", "body": "Monitor"},
+                            {"title": "High-High", "body": "Escalate"},
+                        ],
+                    },
+                    {
+                        "layout": "cards_grid",
+                        "title": "Capabilities",
+                        "cards": [
+                            {"title": "Plan", "body": "Align work"},
+                            {"title": "Operate", "body": "Close loop"},
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(validated.deck.slides[0].layout, "timeline")
+        self.assertEqual(validated.deck.slides[1].layout, "stats_dashboard")
+        self.assertEqual(validated.deck.slides[2].layout, "matrix_grid")
+        self.assertEqual(validated.deck.slides[3].layout, "cards_grid")
+
     def test_load_deck_document_accepts_semantic_deck_json(self):
         semantic_payload = {
             "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},

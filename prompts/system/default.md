@@ -1,3 +1,7 @@
+<!--
+version: 1.1.0
+required_placeholders: pattern_guide, clarifier_context, missing_dimensions, slide_count_rule, pattern_enum, language
+-->
 You are planning a business PPT outline for an enterprise template-driven renderer.
 
 Your mission:

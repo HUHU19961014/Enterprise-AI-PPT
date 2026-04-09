@@ -1,24 +1,31 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .schema import (
+    CardsGridSlide,
     DeckDocument,
+    MatrixGridSlide,
+    StatsDashboardSlide,
+    TimelineSlide,
     TitleContentSlide,
     TitleImageSlide,
     TwoColumnsSlide,
     ValidatedDeck,
     validate_deck_payload,
 )
+from .rule_config import load_v2_rule_config
 
 
 WARNING_LEVEL_WARNING = "warning"
 WARNING_LEVEL_HIGH = "high"
 WARNING_LEVEL_ERROR = "error"
+RULE_CONFIG = load_v2_rule_config()
 
 
 @dataclass(frozen=True)
@@ -99,53 +106,9 @@ def _count_hanzi(text: str) -> int:
 
 
 # Titles that usually behave like table-of-contents labels instead of business conclusions.
-DIRECTORY_STYLE_EXACT_TITLES = {
-    "建设背景",
-    "现状问题",
-    "方案架构",
-    "实施路径",
-    "培训目标",
-    "问题识别",
-}
-
-DIRECTORY_STYLE_SUFFIXES = (
-    "背景",
-    "问题",
-    "架构",
-    "路径",
-    "分析",
-    "介绍",
-    "说明",
-    "目标",
-    "计划",
-    "展望",
-    "识别",
-)
-
-CONCLUSION_MARKERS = (
-    "需要",
-    "需",
-    "应",
-    "将",
-    "已",
-    "已经",
-    "正在",
-    "不是",
-    "而是",
-    "成为",
-    "转向",
-    "推动",
-    "提升",
-    "恢复",
-    "守住",
-    "聚焦",
-    "建立",
-    "形成",
-    "支撑",
-    "依赖",
-    "本质",
-    "意味着",
-)
+DIRECTORY_STYLE_EXACT_TITLES = RULE_CONFIG.directory_style.exact_titles
+DIRECTORY_STYLE_SUFFIXES = RULE_CONFIG.directory_style.suffixes
+CONCLUSION_MARKERS = RULE_CONFIG.directory_style.conclusion_markers
 
 
 def _normalize_title_for_pattern(title: str) -> str:
@@ -327,6 +290,110 @@ def _title_image_warnings(slide: TitleImageSlide) -> list[ContentWarning]:
     return warnings
 
 
+def _timeline_warnings(slide: TimelineSlide) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    if len(slide.stages) > 5:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"timeline has {len(slide.stages)} stages, which exceeds the 5-stage recommended threshold.",
+            )
+        )
+    for index, stage in enumerate(slide.stages, start=1):
+        if stage.detail and len(stage.detail) > 45:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"timeline stage {index} detail length is {len(stage.detail)}, which exceeds 45 characters (recommended threshold).",
+                )
+            )
+    return warnings
+
+
+def _stats_dashboard_warnings(slide: StatsDashboardSlide) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    if len(slide.metrics) > 4:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"stats_dashboard has {len(slide.metrics)} metrics, which exceeds 4.",
+            )
+        )
+    if len(slide.insights) > 3:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"stats_dashboard has {len(slide.insights)} insight items, which exceeds 3.",
+            )
+        )
+    for index, metric in enumerate(slide.metrics, start=1):
+        if metric.note and len(metric.note) > 35:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"stats_dashboard metric {index} note length is {len(metric.note)}, which exceeds 35 characters (recommended threshold).",
+                )
+            )
+    return warnings
+
+
+def _matrix_grid_warnings(slide: MatrixGridSlide) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    if len(slide.cells) < 4:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"matrix_grid has {len(slide.cells)} cells; 4 cells are recommended for a balanced quadrant view.",
+            )
+        )
+    for index, cell in enumerate(slide.cells, start=1):
+        if cell.body and len(cell.body) > 45:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"matrix_grid cell {index} body length is {len(cell.body)}, which exceeds 45 characters (recommended threshold).",
+                )
+            )
+    return warnings
+
+
+def _cards_grid_warnings(slide: CardsGridSlide) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    if len(slide.cards) > 3:
+        warnings.append(
+            ContentWarning(
+                slide_id=slide.slide_id,
+                warning_level=WARNING_LEVEL_WARNING,
+                message=f"cards_grid has {len(slide.cards)} cards, which exceeds 3.",
+            )
+        )
+    for index, card in enumerate(slide.cards, start=1):
+        if card.body and len(card.body) > 50:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_ERROR,
+                    message=f"cards_grid card {index} body length is {len(card.body)}, which exceeds 50 characters (severe overflow risk).",
+                )
+            )
+        elif card.body and len(card.body) > 35:
+            warnings.append(
+                ContentWarning(
+                    slide_id=slide.slide_id,
+                    warning_level=WARNING_LEVEL_WARNING,
+                    message=f"cards_grid card {index} body length is {len(card.body)}, which exceeds 35 characters (recommended threshold).",
+                )
+            )
+    return warnings
+
+
 def check_slide_content(slide) -> list[ContentWarning]:
     warnings = _title_warnings(slide)
     if isinstance(slide, TitleContentSlide):
@@ -335,6 +402,14 @@ def check_slide_content(slide) -> list[ContentWarning]:
         warnings.extend(_two_columns_warnings(slide))
     elif isinstance(slide, TitleImageSlide):
         warnings.extend(_title_image_warnings(slide))
+    elif isinstance(slide, TimelineSlide):
+        warnings.extend(_timeline_warnings(slide))
+    elif isinstance(slide, StatsDashboardSlide):
+        warnings.extend(_stats_dashboard_warnings(slide))
+    elif isinstance(slide, MatrixGridSlide):
+        warnings.extend(_matrix_grid_warnings(slide))
+    elif isinstance(slide, CardsGridSlide):
+        warnings.extend(_cards_grid_warnings(slide))
     return warnings
 
 
@@ -396,13 +471,22 @@ def calculate_auto_score(
     warning_count: int,
     high_count: int,
     error_count: int,
+    slide_count: int = 0,
 ) -> AutoScoreResult:
-    score = max(0, 100 - warning_count * 2 - high_count * 5 - error_count * 20)
-    if score >= 90:
+    scoring = RULE_CONFIG.scoring
+    weighted_penalty = (
+        warning_count * scoring.warning_weight
+        + high_count * scoring.high_weight
+        + error_count * scoring.error_weight
+    )
+    scaling_factor = max(1.0, math.sqrt(max(slide_count, 1) / scoring.baseline_slide_count))
+    scaled_penalty = math.ceil(weighted_penalty / scaling_factor)
+    score = max(0, scoring.base_score - scaled_penalty)
+    if score >= scoring.excellent_threshold:
         level = "优秀"
-    elif score >= 75:
+    elif score >= scoring.usable_threshold:
         level = "可用"
-    elif score >= 60:
+    elif score >= scoring.review_threshold:
         level = "需复核"
     else:
         level = "不可用"
@@ -432,6 +516,7 @@ def _build_quality_gate_result(
         warning_count=len(warnings),
         high_count=len(high),
         error_count=len(errors),
+        slide_count=(len(validated_deck.deck.slides) if validated_deck is not None else 0),
     )
     return QualityGateResult(
         passed=passed,

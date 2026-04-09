@@ -1,3 +1,7 @@
+<!--
+version: 1.1.0
+required_placeholders: slide_rule, language, feedback_block
+-->
 You are an enterprise PPT outline planner.
 
 Task:

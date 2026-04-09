@@ -65,21 +65,24 @@ mindmap
 
 ## 当前能力
 
-- `Topic -> AI Outline -> Deck JSON -> PPTX`
+- `Topic -> AI Outline -> Semantic Deck -> Compiled Deck -> PPTX`
 - `HTML -> DeckSpec JSON -> PPTX`
 - `Structure JSON -> DeckSpec JSON -> PPTX`
 - 模糊需求澄清：先补齐受众、页数、风格、目标，再进入规划
+- V2 语义渲染：支持 `timeline`、`stats_dashboard`、`matrix_grid`、`cards_grid` 等专用布局
 - 模板驱动渲染：支持目录页高亮、正文页池、结束页保留
 - 多种 LLM 接入方式：OpenAI 兼容接口、本地网关、外部规划器命令
 
 ## 推荐流程
+
+当前推荐只把 V2 语义链路作为主流程；legacy 模板链路仅保留兼容，不再作为默认入口推广。
 
 ### 流程 A：一句话生成 PPT
 
 适合快速生成首版汇报。
 
 ```powershell
-enterprise-ai-ppt ai-make `
+enterprise-ai-ppt make `
   --topic "制造企业 AI 应用落地汇报" `
   --brief "面向管理层，突出当前问题、目标架构、实施路径与预期收益" `
   --min-slides 6 `
@@ -91,18 +94,19 @@ enterprise-ai-ppt ai-make `
 适合需要先确认结构，再输出 PPT 的场景。
 
 ```powershell
-enterprise-ai-ppt ai-plan `
+enterprise-ai-ppt v2-plan `
   --topic "供应链追溯体系建设方案" `
   --brief "用于客户提案，强调监管要求、现状痛点、方案设计和实施路线" `
   --min-slides 6 `
   --max-slides 10 `
-  --plan-output .\projects\generated\traceability.deck.json
+  --plan-output .\projects\generated\traceability.deck.json `
+  --semantic-output .\projects\generated\traceability.semantic.json
 ```
 
 ```powershell
-enterprise-ai-ppt render `
+enterprise-ai-ppt v2-render `
   --deck-json .\projects\generated\traceability.deck.json `
-  --output-name Traceability_Proposal
+  --ppt-output .\projects\generated\Traceability_Proposal.pptx
 ```
 
 ### 流程 C：从 HTML 内容生成 PPT
@@ -113,6 +117,21 @@ enterprise-ai-ppt render `
 enterprise-ai-ppt make `
   --html .\samples\input\uat_plan_sample.html `
   --output-name Html_Render
+```
+
+### 流程 D：生成后做视觉复核
+
+适合已经拿到 deck JSON，希望继续自动检查和迭代修正的场景。
+
+```powershell
+enterprise-ai-ppt review `
+  --deck-json .\projects\generated\traceability.deck.json
+```
+
+```powershell
+enterprise-ai-ppt iterate `
+  --deck-json .\projects\generated\traceability.deck.json `
+  --max-rounds 2
 ```
 
 ## 快速开始
@@ -146,7 +165,7 @@ enterprise-ai-ppt ai-check --topic "企业 AI 汇报健康检查"
 ### 3. 生成第一个 PPT
 
 ```powershell
-enterprise-ai-ppt ai-make `
+enterprise-ai-ppt make `
   --topic "企业数字化转型项目汇报" `
   --brief "面向管理层，输出 6 到 8 页，强调业务价值与落地路径" `
   --min-slides 6 `
@@ -157,15 +176,13 @@ enterprise-ai-ppt ai-make `
 
 ## 常用命令
 
-- `ai-check`：检查 AI 规划链路是否可用
-- `ai-plan`：自然语言主题生成 Deck JSON
-- `ai-make`：自然语言主题直接生成 PPT
-- `plan`：HTML 生成 Deck JSON
-- `render`：Deck JSON 渲染为 PPT
-- `make`：HTML 直接生成 PPT
+- `make`：推荐主入口；`--topic` / `--outline-json` 会走 V2 语义流程，`--html` 走 HTML 模板流程
+- `review` / `iterate`：推荐的视觉复核入口，分别对应单轮与多轮复核
+- `v2-plan` / `v2-render` / `v2-make`：V2 分步或全量生成流程
 - `clarify`：对模糊需求先做澄清
-- `structure` / `structure-plan` / `structure-make`：结构优先流程
-- `v2-outline` / `v2-plan` / `v2-make`：V2 结构化生成流程
+- `ai-check`：检查 AI 规划链路是否可用
+- `plan` / `render`：HTML / DeckSpec 的传统模板流程
+- `ai-plan` / `ai-make` / `structure*`：保留兼容的 legacy 命令，不建议作为新流程入口
 
 ## 页数与风格策略
 
@@ -208,3 +225,5 @@ enterprise-ai-ppt ai-make `
 
 当前仓库对外展示名称为 `Enterprise-AI-PPT`。  
 出于兼容性考虑，内部 Python 包名和部分环境变量仍保留 `sie_autoppt` / `SIE_AUTOPPT_*` 命名。
+
+当前源码仍位于 `tools/sie_autoppt/`，这是历史兼容结构。对外使用时请以 `enterprise-ai-ppt` 命令和 V2 语义流程为主。

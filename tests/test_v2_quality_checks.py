@@ -1,6 +1,6 @@
 import unittest
 
-from tools.sie_autoppt.v2.quality_checks import check_deck_content
+from tools.sie_autoppt.v2.quality_checks import calculate_auto_score, check_deck_content
 from tools.sie_autoppt.v2.schema import validate_deck_payload
 
 
@@ -40,6 +40,37 @@ class V2QualityChecksTests(unittest.TestCase):
 
         self.assertEqual(len(directory_style_warnings), 1)
         self.assertIn("建设背景", directory_style_warnings[0])
+
+    def test_directory_style_check_covers_extended_suffixes(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {
+                    "title": "测试标题",
+                    "theme": "business_red",
+                    "language": "zh-CN",
+                    "author": "AI Auto PPT",
+                    "version": "2.0",
+                },
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_only",
+                        "title": "治理现状",
+                    },
+                    {
+                        "slide_id": "s2",
+                        "layout": "title_only",
+                        "title": "当前治理现状需要从分散整改转向平台化治理",
+                    },
+                ],
+            }
+        )
+
+        warnings = check_deck_content(validated.deck)
+        directory_style_warnings = [item.message for item in warnings if "directory-style" in item.message]
+
+        self.assertEqual(len(directory_style_warnings), 1)
+        self.assertIn("治理现状", directory_style_warnings[0])
 
     def test_content_checks_emit_structured_warnings(self):
         validated = validate_deck_payload(
@@ -97,3 +128,77 @@ class V2QualityChecksTests(unittest.TestCase):
         self.assertTrue(any(item.slide_id == "s2" and "left column" in item.message for item in warnings))
         self.assertTrue(any(item.slide_id == "s2" and "count gap" in item.message for item in warnings))
         self.assertTrue(any(item.slide_id == "s3" and "exceeds 4" in item.message for item in warnings))
+
+    def test_auto_score_scales_penalty_by_slide_count(self):
+        short_deck_score = calculate_auto_score(warning_count=4, high_count=1, error_count=0, slide_count=6)
+        long_deck_score = calculate_auto_score(warning_count=4, high_count=1, error_count=0, slide_count=24)
+
+        self.assertLess(short_deck_score.auto_score, long_deck_score.auto_score)
+
+    def test_specialized_layouts_emit_density_warnings(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {
+                    "title": "Specialized",
+                    "theme": "business_red",
+                    "language": "zh-CN",
+                    "author": "AI Auto PPT",
+                    "version": "2.0",
+                },
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "timeline",
+                        "title": "实施路线",
+                        "stages": [
+                            {"title": "Q1", "detail": "A" * 46},
+                            {"title": "Q2", "detail": "Build"},
+                            {"title": "Q3", "detail": "Pilot"},
+                            {"title": "Q4", "detail": "Scale"},
+                            {"title": "Q5", "detail": "Govern"},
+                            {"title": "Q6", "detail": "Optimize"},
+                        ],
+                    },
+                    {
+                        "slide_id": "s2",
+                        "layout": "stats_dashboard",
+                        "title": "KPI看板",
+                        "metrics": [
+                            {"label": "M1", "value": "1", "note": "n" * 36},
+                            {"label": "M2", "value": "2"},
+                            {"label": "M3", "value": "3"},
+                            {"label": "M4", "value": "4"},
+                            {"label": "M5", "value": "5"},
+                        ],
+                        "insights": ["i1", "i2", "i3", "i4"],
+                    },
+                    {
+                        "slide_id": "s3",
+                        "layout": "matrix_grid",
+                        "title": "风险矩阵",
+                        "cells": [
+                            {"title": "Only", "body": "b" * 46},
+                            {"title": "Second", "body": "ok"},
+                        ],
+                    },
+                    {
+                        "slide_id": "s4",
+                        "layout": "cards_grid",
+                        "title": "能力主题",
+                        "cards": [
+                            {"title": "A", "body": "b" * 36},
+                            {"title": "B", "body": "ok"},
+                            {"title": "C", "body": "ok"},
+                            {"title": "D", "body": "ok"},
+                        ],
+                    },
+                ],
+            }
+        )
+
+        warnings = check_deck_content(validated.deck)
+
+        self.assertTrue(any(item.slide_id == "s1" and "timeline has 6 stages" in item.message for item in warnings))
+        self.assertTrue(any(item.slide_id == "s2" and "stats_dashboard has 5 metrics" in item.message for item in warnings))
+        self.assertTrue(any(item.slide_id == "s3" and "matrix_grid has 2 cells" in item.message for item in warnings))
+        self.assertTrue(any(item.slide_id == "s4" and "cards_grid has 4 cards" in item.message for item in warnings))

@@ -2,12 +2,23 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.sie_autoppt import cli
 from tools.sie_autoppt.v2.schema import OutlineDocument, validate_deck_payload
+
+
+RESOLVED_V2_CONTEXT = (
+    "AI make",
+    "Brief",
+    "公司领导",
+    None,
+    6,
+    10,
+    "business_red",
+)
 
 
 class V2CliTests(unittest.TestCase):
@@ -39,6 +50,7 @@ class V2CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
                 patch("sys.argv", ["sie-autoppt", "v2-plan", "--topic", "AI plan", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
                 patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline),
                 patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai", return_value=semantic_payload),
                 patch("tools.sie_autoppt.cli.compile_semantic_deck_payload", return_value=validated),
@@ -56,6 +68,7 @@ class V2CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
                 patch("sys.argv", ["sie-autoppt", "v2-make", "--topic", "AI make", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
                 patch(
                     "tools.sie_autoppt.cli.make_v2_ppt",
                     return_value=type(
@@ -141,6 +154,7 @@ class V2CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
                 patch("sys.argv", ["sie-autoppt", "--full-pipeline", "--topic", "AI make", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
                 patch(
                     "tools.sie_autoppt.cli.make_v2_ppt",
                     return_value=type(
@@ -236,12 +250,42 @@ class V2CliTests(unittest.TestCase):
             self.assertTrue(lines[1].endswith("patches_round_2.json"))
             self.assertTrue(lines[3].endswith(".pptx"))
 
+    def test_iterate_alias_routes_to_v2_iterate(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "iterate", "--deck-json", "deck.json", "--review-output-dir", temp_dir, "--max-rounds", "2"]),
+                patch(
+                    "tools.sie_autoppt.cli.iterate_visual_review",
+                    return_value=type(
+                        "FakeLoopArtifacts",
+                        (),
+                        {
+                            "final_review_path": Path(temp_dir) / "review_round_2.json",
+                            "final_patch_path": Path(temp_dir) / "patches_round_2.json",
+                            "deck_path": Path(temp_dir) / "review_round_1_patched.deck.json",
+                            "pptx_path": Path(temp_dir) / "review_round_2.pptx",
+                            "preview_dir": Path(temp_dir) / "previews_round_2",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                cli.main()
+
+            self.assertIn("'iterate' maps to 'v2-iterate'", stderr.getvalue())
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(lines), 5)
+            self.assertTrue(lines[0].endswith("review_round_2.json"))
+
     def test_v2_render_accepts_semantic_deck_json(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             semantic_path = Path(temp_dir) / "semantic.json"
             semantic_path.write_text(
-                __import__("json").dumps(
+                json.dumps(
                     {
                         "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
                         "slides": [
@@ -249,7 +293,7 @@ class V2CliTests(unittest.TestCase):
                                 "slide_id": "s1",
                                 "title": "结论",
                                 "intent": "conclusion",
-                                "blocks": [{"kind": "statement", "text": "先打通主链，再扩展到运营闭环。"}],
+                                "blocks": [{"kind": "statement", "text": "先打通主链路，再扩展到运营闭环。"}],
                             }
                         ],
                     },

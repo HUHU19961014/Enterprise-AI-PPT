@@ -125,3 +125,31 @@ class ContentRewriterTests(unittest.TestCase):
         rewritten_slide = rewrite_result.validated_deck.deck.model_dump(mode="json")["slides"][0]
         self.assertLessEqual(len(rewritten_slide["left"]["items"]), 4)
         self.assertLessEqual(abs(len(rewritten_slide["left"]["items"]) - len(rewritten_slide["right"]["items"])), 3)
+
+    def test_rewrite_keeps_safe_phrases_when_stripping_filler_words(self):
+        gate_result = quality_gate(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_content",
+                        "title": "当前平台需要持续改进 CI/CD 交付链路并推动环境标准化",
+                        "content": [
+                            "当前团队需要持续改进 CI/CD 流程，并推动发布质量稳定提升。",
+                            "第二条内容明显过长，需要继续压缩表达以适应页面宽度。",
+                            "第三条",
+                            "第四条",
+                            "第五条",
+                            "第六条",
+                            "第七条",
+                        ],
+                    }
+                ],
+            }
+        )
+        slide = gate_result.validated_deck.deck.model_dump(mode="json")["slides"][0]
+        rewritten, _ = rewrite_slide(slide, list(gate_result.all_issues()))
+
+        self.assertIn("持续改进", rewritten["title"])
+        self.assertTrue(any("CI/CD" in item for item in rewritten["content"]))

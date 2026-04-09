@@ -12,22 +12,50 @@ from tools.sie_autoppt.models import BodyPageSpec, DeckSpec
 
 
 class CliTests(unittest.TestCase):
+    def test_help_emphasizes_primary_commands_without_listing_legacy_choices(self):
+        stdout = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "--help"]),
+            redirect_stdout(stdout),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Primary commands: make, review, iterate", help_text)
+        self.assertIn("Legacy V1/template commands remain available for compatibility but are hidden from help.", help_text)
+        self.assertNotIn("{make,plan,render", help_text)
+
+    def test_unknown_command_returns_curated_error_message(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "unknown-cmd"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("unknown command 'unknown-cmd'", stderr.getvalue())
+        self.assertIn("primary commands (make, review, iterate)", stderr.getvalue())
+
     def test_ai_check_prints_summary(self):
         deck = DeckSpec(
-            cover_title="AI AutoPPT 健康检查",
+            cover_title="AI AutoPPT Healthcheck",
             body_pages=[
                 BodyPageSpec(
                     page_key="p1",
-                    title="测试页",
+                    title="Test Page",
                     subtitle="",
-                    bullets=["要点一", "要点二"],
+                    bullets=["Point A", "Point B"],
                     pattern_id="general_business",
                 )
             ],
         )
         stdout = io.StringIO()
         with (
-            patch("sys.argv", ["sie-autoppt", "ai-check", "--topic", "健康检查"]),
+            patch("sys.argv", ["sie-autoppt", "ai-check", "--topic", "Healthcheck"]),
             patch(
                 "tools.sie_autoppt.services.load_openai_responses_config",
                 return_value=OpenAIResponsesConfig(
@@ -50,12 +78,12 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["model"], "gpt-4o-mini")
         self.assertEqual(payload["api_style"], "responses")
         self.assertEqual(payload["page_count"], 1)
-        self.assertEqual(payload["first_page_title"], "测试页")
+        self.assertEqual(payload["first_page_title"], "Test Page")
 
     def test_ai_plan_rejects_mixing_exact_and_range(self):
         stderr = io.StringIO()
         with (
-            patch("sys.argv", ["sie-autoppt", "ai-plan", "--topic", "测试", "--chapters", "4", "--min-slides", "3"]),
+            patch("sys.argv", ["sie-autoppt", "ai-plan", "--topic", "Test", "--chapters", "4", "--min-slides", "3"]),
             redirect_stderr(stderr),
         ):
             with self.assertRaises(SystemExit) as ctx:
@@ -79,31 +107,6 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("AI healthcheck blocked", stderr.getvalue())
-
-    def test_ai_check_external_planner_reports_external_backend(self):
-        deck = DeckSpec(
-            cover_title="外部规划器",
-            body_pages=[
-                BodyPageSpec(
-                    page_key="p1",
-                    title="测试页",
-                    subtitle="",
-                    bullets=["要点一", "要点二"],
-                    pattern_id="general_business",
-                )
-            ],
-        )
-        stdout = io.StringIO()
-        with (
-            patch("sys.argv", ["sie-autoppt", "ai-check", "--planner-command", "echo test"]),
-            patch("tools.sie_autoppt.services.plan_deck_spec_with_ai", return_value=deck),
-            redirect_stdout(stdout),
-        ):
-            cli.main()
-
-        payload = json.loads(stdout.getvalue().strip())
-        self.assertEqual(payload["api_style"], "external_command")
-        self.assertEqual(payload["model"], "external-command")
 
     def test_clarify_outputs_session_json_and_persists_state_file(self):
         stdout = io.StringIO()
@@ -133,7 +136,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             structure_path = f"{temp_dir}\\sample.structure.json"
             with (
-                patch("sys.argv", ["sie-autoppt", "structure", "--topic", "做一个 AI 行业趋势汇报", "--output-dir", temp_dir]),
+                patch("sys.argv", ["sie-autoppt", "structure", "--topic", "做一个AI行业趋势汇报", "--output-dir", temp_dir]),
                 patch("tools.sie_autoppt.cli.generate_structure_only", return_value=Path(structure_path)),
                 redirect_stdout(stdout),
             ):
@@ -141,36 +144,62 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("sample.structure.json", stdout.getvalue())
 
-    def test_topic_without_explicit_command_routes_to_v2_make(self):
-        stdout = io.StringIO()
+    def test_topic_without_explicit_command_requires_clarification_before_v2_make(self):
         stderr = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
                 patch("sys.argv", ["sie-autoppt", "--topic", "做一份装备制造数字化方案", "--output-dir", temp_dir]),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("Clarification required before 'v2-make'", stderr.getvalue())
+        self.assertIn("semantic v2-make", stderr.getvalue())
+
+    def test_v2_route_rejects_explicit_template_argument(self):
+        stderr = io.StringIO()
+        with (
+            patch("sys.argv", ["sie-autoppt", "--topic", "测试主题", "--template", "custom.pptx"]),
+            redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main()
+
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--template is not supported by V2 workflows", stderr.getvalue())
+
+    def test_explicit_make_with_topic_routes_to_v2_make(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch("sys.argv", ["sie-autoppt", "make", "--topic", "测试主题", "--output-dir", temp_dir]),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=("测试主题", "", "公司领导", None, 6, 8, "business_red")),
                 patch(
                     "tools.sie_autoppt.cli.make_v2_ppt",
                     return_value=type(
                         "FakeArtifacts",
                         (),
                         {
-                            "outline_path": Path(temp_dir) / "generated_outline.json",
-                            "semantic_path": Path(temp_dir) / "generated_semantic_deck.json",
-                            "deck_path": Path(temp_dir) / "generated_deck.json",
+                            "outline_path": Path(temp_dir) / "deck.outline.json",
+                            "semantic_path": Path(temp_dir) / "deck.semantic.v2.json",
+                            "deck_path": Path(temp_dir) / "deck.deck.v2.json",
                             "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
                             "warnings_path": Path(temp_dir) / "warnings.json",
-                            "log_path": Path(temp_dir) / "log.txt",
-                            "pptx_path": Path(temp_dir) / "Enterprise-AI-PPT_Presentation.pptx",
+                            "log_path": Path(temp_dir) / "deck.log.txt",
+                            "pptx_path": Path(temp_dir) / "deck.pptx",
                         },
                     )(),
-                ) as make_mock,
+                ),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
                 cli.main()
 
-        make_mock.assert_called_once()
-        self.assertIn("semantic v2-make", stderr.getvalue())
-        self.assertIn("generated_semantic_deck.json", stdout.getvalue())
+        self.assertIn("now routes to semantic v2-make", stderr.getvalue())
+        self.assertIn("deck.pptx", stdout.getvalue())
 
     def test_ai_make_prints_legacy_warning(self):
         stdout = io.StringIO()

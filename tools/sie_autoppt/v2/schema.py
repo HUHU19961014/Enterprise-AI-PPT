@@ -14,6 +14,10 @@ SUPPORTED_LAYOUTS = (
     "title_content",
     "two_columns",
     "title_image",
+    "timeline",
+    "stats_dashboard",
+    "matrix_grid",
+    "cards_grid",
 )
 
 
@@ -115,6 +119,51 @@ class ImageBlock(BaseModel):
         return self
 
 
+class TimelineStage(BaseModel):
+    title: str = Field(min_length=1, max_length=24)
+    detail: str | None = Field(default=None, max_length=60)
+
+    @field_validator("title", "detail", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class CardEntry(BaseModel):
+    title: str = Field(min_length=1, max_length=24)
+    body: str | None = Field(default=None, max_length=60)
+
+    @field_validator("title", "body", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class MetricEntry(BaseModel):
+    label: str = Field(min_length=1, max_length=24)
+    value: str = Field(min_length=1, max_length=24)
+    note: str | None = Field(default=None, max_length=40)
+
+    @field_validator("label", "value", "note", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class MatrixCell(BaseModel):
+    title: str = Field(min_length=1, max_length=24)
+    body: str | None = Field(default=None, max_length=60)
+
+    @field_validator("title", "body", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
 class SectionBreakSlide(BaseModel):
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["section_break"]
@@ -193,8 +242,80 @@ class TitleImageSlide(BaseModel):
         return items
 
 
+class TimelineSlide(BaseModel):
+    slide_id: str = Field(min_length=1, max_length=40)
+    layout: Literal["timeline"]
+    title: str = Field(min_length=2, max_length=60)
+    heading: str | None = Field(default=None, max_length=40)
+    stages: list[TimelineStage] = Field(min_length=2, max_length=6)
+
+    @field_validator("slide_id", "title", "heading", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class StatsDashboardSlide(BaseModel):
+    slide_id: str = Field(min_length=1, max_length=40)
+    layout: Literal["stats_dashboard"]
+    title: str = Field(min_length=2, max_length=60)
+    heading: str | None = Field(default=None, max_length=40)
+    metrics: list[MetricEntry] = Field(min_length=2, max_length=6)
+    insights: list[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("slide_id", "title", "heading", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+    @field_validator("insights", mode="before")
+    @classmethod
+    def _normalize_insights(cls, value: Any) -> list[str]:
+        return _normalize_string_list(value)
+
+
+class MatrixGridSlide(BaseModel):
+    slide_id: str = Field(min_length=1, max_length=40)
+    layout: Literal["matrix_grid"]
+    title: str = Field(min_length=2, max_length=60)
+    heading: str | None = Field(default=None, max_length=40)
+    x_axis: str | None = Field(default=None, max_length=24)
+    y_axis: str | None = Field(default=None, max_length=24)
+    cells: list[MatrixCell] = Field(min_length=2, max_length=4)
+
+    @field_validator("slide_id", "title", "heading", "x_axis", "y_axis", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
+class CardsGridSlide(BaseModel):
+    slide_id: str = Field(min_length=1, max_length=40)
+    layout: Literal["cards_grid"]
+    title: str = Field(min_length=2, max_length=60)
+    heading: str | None = Field(default=None, max_length=40)
+    cards: list[CardEntry] = Field(min_length=2, max_length=4)
+
+    @field_validator("slide_id", "title", "heading", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, value: Any) -> str | None:
+        text = _strip_text(value)
+        return text or None
+
+
 SlideModel = Annotated[
-    SectionBreakSlide | TitleOnlySlide | TitleContentSlide | TwoColumnsSlide | TitleImageSlide,
+    SectionBreakSlide
+    | TitleOnlySlide
+    | TitleContentSlide
+    | TwoColumnsSlide
+    | TitleImageSlide
+    | TimelineSlide
+    | StatsDashboardSlide
+    | MatrixGridSlide
+    | CardsGridSlide,
     Field(discriminator="layout"),
 ]
 
@@ -280,6 +401,18 @@ def collect_deck_warnings(deck: DeckDocument) -> list[str]:
         if isinstance(slide, TitleImageSlide):
             if len(slide.content) > 5:
                 warnings.append(f"[{slide.slide_id}] title_image has more than 5 bullet items.")
+        if isinstance(slide, TimelineSlide):
+            if len(slide.stages) > 5:
+                warnings.append(f"[{slide.slide_id}] timeline has more than 5 stages and may become visually dense.")
+        if isinstance(slide, StatsDashboardSlide):
+            if len(slide.metrics) > 4:
+                warnings.append(f"[{slide.slide_id}] stats_dashboard has more than 4 metrics and may need tighter spacing.")
+        if isinstance(slide, MatrixGridSlide):
+            if len(slide.cells) < 4:
+                warnings.append(f"[{slide.slide_id}] matrix_grid uses fewer than 4 cells and may look sparse.")
+        if isinstance(slide, CardsGridSlide):
+            if len(slide.cards) > 3:
+                warnings.append(f"[{slide.slide_id}] cards_grid has more than 3 cards and may require manual review.")
     return warnings
 
 

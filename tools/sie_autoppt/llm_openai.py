@@ -26,6 +26,14 @@ class OpenAIResponsesError(RuntimeError):
     pass
 
 
+class OpenAIHTTPStatusError(OpenAIResponsesError):
+    def __init__(self, status_code: int, detail: str, route: str):
+        super().__init__(format_openai_http_error(status_code, detail))
+        self.status_code = status_code
+        self.detail = detail
+        self.route = route
+
+
 @dataclass(frozen=True)
 class OpenAIResponsesConfig:
     api_key: str
@@ -200,6 +208,28 @@ class OpenAIResponsesClient:
                 developer_prompt=developer_prompt,
                 user_items=user_items,
             )
+        try:
+            return self._create_responses_json(
+                developer_prompt=developer_prompt,
+                user_items=user_items,
+                schema_name=schema_name,
+                schema=schema,
+            )
+        except OpenAIHTTPStatusError as exc:
+            if self._config.api_style == "auto" and self._should_fallback_to_chat_completions(exc):
+                return self._create_chat_completions_json(
+                    developer_prompt=developer_prompt,
+                    user_items=user_items,
+                )
+            raise
+
+    def _create_responses_json(
+        self,
+        developer_prompt: str,
+        user_items: list[dict[str, Any]],
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
         payload = {
             "model": self._config.model,
             "input": [
@@ -225,6 +255,23 @@ class OpenAIResponsesClient:
         }
         response_payload = self._post_json("/responses", payload)
         return extract_json_object_from_responses_payload(response_payload)
+
+    def _should_fallback_to_chat_completions(self, exc: OpenAIHTTPStatusError) -> bool:
+        if exc.status_code not in {400, 404, 405, 415, 422, 501}:
+            return False
+        detail = exc.detail.lower()
+        route = exc.route.lower()
+        indicators = (
+            route,
+            "unsupported",
+            "not found",
+            "does not exist",
+            "unknown request url",
+            "unrecognized request url",
+            "invalid endpoint",
+            "responses api",
+        )
+        return any(indicator in detail for indicator in indicators)
 
     def _create_chat_completions_json(
         self,
@@ -296,7 +343,7 @@ class OpenAIResponsesClient:
                 if exc.code in {429, 500, 502, 503, 504} and attempt < max_retries - 1:
                     time.sleep(self._retry_delay_seconds(attempt=attempt, retry_after_header=exc.headers.get("Retry-After")))
                     continue
-                raise OpenAIResponsesError(format_openai_http_error(exc.code, detail)) from exc
+                raise OpenAIHTTPStatusError(exc.code, detail, route) from exc
             except error.URLError as exc:
                 if attempt < max_retries - 1:
                     time.sleep(self._retry_delay_seconds(attempt=attempt))

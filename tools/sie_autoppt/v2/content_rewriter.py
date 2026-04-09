@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .quality_checks import ContentWarning, QualityGateResult, quality_gate
+from .rule_config import load_v2_rule_config
 from .schema import ValidatedDeck, validate_deck_payload
 
 
@@ -15,6 +16,7 @@ BULLET_LIMIT = 32
 TITLE_CONTENT_TARGET = 6
 TITLE_IMAGE_TARGET = 4
 TWO_COLUMNS_TARGET = 5
+RULE_CONFIG = load_v2_rule_config()
 
 FIXABLE_PATTERNS = (
     "title contains",
@@ -28,21 +30,8 @@ FIXABLE_PATTERNS = (
     "item count gap",
 )
 
-FILLER_PATTERNS = (
-    r"进一步",
-    r"持续",
-    r"积极",
-    r"系统性",
-    r"整体",
-    r"相关",
-    r"有效",
-    r"重点",
-    r"当前",
-    r"主要",
-    r"进行",
-    r"推动",
-    r"推进",
-)
+FILLER_PATTERNS = tuple(re.compile(pattern) for pattern in RULE_CONFIG.rewrite.filler_patterns)
+FILLER_SAFE_PHRASES = RULE_CONFIG.rewrite.filler_safe_phrases
 
 DIRECTORY_STYLE_WARNING = "appears to be directory-style"
 CONCLUSION_MARKERS = (
@@ -138,6 +127,26 @@ def _truncate_text(text: str, max_length: int) -> str:
     return clipped or normalized[:max_length]
 
 
+def _strip_filler_patterns(text: str) -> str:
+    protected = text
+    replacements: dict[str, str] = {}
+    for index, phrase in enumerate(FILLER_SAFE_PHRASES):
+        if not phrase:
+            continue
+        placeholder = f"__SAFE_FILLER_{index}__"
+        if phrase in protected:
+            protected = protected.replace(phrase, placeholder)
+            replacements[placeholder] = phrase
+
+    stripped = protected
+    for pattern in FILLER_PATTERNS:
+        stripped = pattern.sub("", stripped)
+
+    for placeholder, phrase in replacements.items():
+        stripped = stripped.replace(placeholder, phrase)
+    return stripped
+
+
 def _compress_text(text: str, max_length: int) -> str:
     normalized = _cleanup_text(_strip_parenthetical(text))
     candidates = [normalized]
@@ -147,9 +156,7 @@ def _compress_text(text: str, max_length: int) -> str:
         candidates.append("；".join(fragment_parts[:2]))
         candidates.append(fragment_parts[0])
 
-    reduced = normalized
-    for pattern in FILLER_PATTERNS:
-        reduced = re.sub(pattern, "", reduced)
+    reduced = _strip_filler_patterns(normalized)
     candidates.append(_cleanup_text(reduced))
 
     for candidate in candidates:

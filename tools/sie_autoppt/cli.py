@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, load_clarifier_session
+from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, derive_planning_context, load_clarifier_session
 from .clarify_web import serve_clarifier_web
 from .config import (
     DEFAULT_HTML,
@@ -79,8 +79,38 @@ WORKFLOW_COMMANDS = (
     "v2-make",
     "v2-review",
     "v2-iterate",
+    "review",
+    "iterate",
 )
 LEGACY_COMMANDS = {"ai-plan", "ai-make", "structure", "structure-plan", "structure-make"}
+PRIMARY_COMMANDS = ("make", "review", "iterate")
+ADVANCED_COMMANDS = (
+    "v2-plan",
+    "v2-render",
+    "v2-compile",
+    "v2-outline",
+    "v2-make",
+    "v2-review",
+    "v2-iterate",
+    "clarify",
+    "clarify-web",
+    "ai-check",
+    "plan",
+    "render",
+)
+COMMAND_ALIASES = {
+    "review": "v2-review",
+    "iterate": "v2-iterate",
+}
+RECOMMENDED_WORKFLOW_HELP = (
+    "Recommended workflows:\n"
+    "  make --topic ...     semantic V2 full generation\n"
+    "  review --deck-json   one-pass visual review alias for v2-review\n"
+    "  iterate --deck-json  multi-round review alias for v2-iterate\n"
+    "Advanced commands:\n"
+    f"  {', '.join(ADVANCED_COMMANDS)}\n"
+    "Legacy V1/template commands remain available for compatibility but are hidden from help."
+)
 
 
 def load_brief_text(brief: str, brief_file: str) -> str:
@@ -123,19 +153,48 @@ def command_was_explicit(argv: list[str]) -> bool:
     return False
 
 
+def normalize_command_alias(command_name: str) -> str:
+    return COMMAND_ALIASES.get(command_name, command_name)
+
+
+def validate_command_name(command_name: str, parser: argparse.ArgumentParser) -> None:
+    normalized = normalize_command_alias(command_name)
+    if normalized in WORKFLOW_COMMANDS:
+        return
+    parser.error(
+        "unknown command "
+        f"'{command_name}'. Use one of the primary commands ({', '.join(PRIMARY_COMMANDS)}) "
+        f"or advanced commands ({', '.join(ADVANCED_COMMANDS)})."
+    )
+
+
 def resolve_effective_command(argv: list[str], args) -> tuple[str, bool]:
     explicit = command_was_explicit(argv)
+    normalized_command = normalize_command_alias(args.command)
     if args.full_pipeline:
         return "v2-make", explicit
+    if normalized_command == "make" and (args.topic.strip() or args.outline_json.strip()):
+        return "v2-make", explicit
     if explicit:
-        return args.command, explicit
+        return normalized_command, explicit
     if args.topic.strip() or args.outline_json.strip():
         return "v2-make", explicit
-    return args.command, explicit
+    return normalized_command, explicit
 
 
 def emit_command_notice(explicit: bool, parsed_command: str, effective_command: str) -> None:
-    if not explicit and effective_command == "v2-make" and parsed_command == "make":
+    if parsed_command in COMMAND_ALIASES:
+        print(
+            f"INFO: '{parsed_command}' maps to '{effective_command}'.",
+            file=sys.stderr,
+        )
+    if effective_command == "v2-make" and parsed_command == "make":
+        if explicit:
+            print(
+                "INFO: 'make' with topic/outline inputs now routes to semantic v2-make. Use plain 'make --html ...' or 'render' for the legacy template pipeline.",
+                file=sys.stderr,
+            )
+            return
         print(
             "INFO: No explicit command detected; routing topic-driven PPT generation to semantic v2-make.",
             file=sys.stderr,
@@ -149,18 +208,98 @@ def emit_command_notice(explicit: bool, parsed_command: str, effective_command: 
         )
 
 
+def option_was_explicit(argv: list[str], option_name: str) -> bool:
+    return option_name in argv
+
+
+def is_v2_command(command_name: str) -> bool:
+    return command_name.startswith("v2-")
+
+
+def validate_v2_option_compatibility(
+    argv: list[str],
+    *,
+    effective_command: str,
+    parser: argparse.ArgumentParser,
+) -> None:
+    if not is_v2_command(effective_command):
+        return
+    if option_was_explicit(argv, "--template"):
+        parser.error(
+            "--template is not supported by V2 workflows. Use --theme for V2, or switch to a legacy PPTX-template workflow such as make/render/ai-make."
+        )
+
+
+def resolve_v2_clarified_context(
+    args,
+    *,
+    brief_text: str,
+    effective_command: str,
+    parser: argparse.ArgumentParser,
+) -> tuple[str, str, str, int | None, int | None, int | None, str]:
+    if not args.topic.strip():
+        return (
+            "",
+            brief_text,
+            args.audience,
+            args.chapters,
+            args.min_slides,
+            args.max_slides,
+            args.theme.strip() or "business_red",
+        )
+
+    context = derive_planning_context(
+        topic=args.topic,
+        brief=brief_text,
+        audience=args.audience,
+        theme=args.theme.strip(),
+        chapters=args.chapters,
+        min_slides=args.min_slides,
+        max_slides=args.max_slides,
+        prefer_llm=False,
+    )
+
+    if context.requirements.template:
+        parser.exit(
+            status=1,
+            message=(
+                "V2 workflows do not support PPTX templates. "
+                f"Requested template: {context.requirements.template}. "
+                "Use --theme for V2, or switch to a legacy workflow such as make/render/ai-make.\n"
+            ),
+        )
+
+    if context.status == "needs_clarification" and not context.skipped:
+        parser.exit(
+            status=1,
+            message=f"Clarification required before '{effective_command}':\n{context.message}\n",
+        )
+
+    return (
+        context.topic,
+        context.brief or brief_text,
+        context.audience.strip() or DEFAULT_AUDIENCE_HINT,
+        context.chapters,
+        context.min_slides,
+        context.max_slides,
+        args.theme.strip() or context.requirements.theme or "business_red",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Plan and render SIE PPT from HTML, compiled deck JSON, semantic deck JSON, or natural-language AI input."
+        description="Plan and render SIE PPT from HTML, compiled deck JSON, semantic deck JSON, or natural-language AI input.",
+        epilog=RECOMMENDED_WORKFLOW_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "command",
         nargs="?",
-        choices=WORKFLOW_COMMANDS,
+        metavar="command",
         default="make",
-        help="Workflow stage to execute. Topic-driven invocations without an explicit command default to semantic 'v2-make'.",
+        help="Primary commands: make, review, iterate. Topic-driven invocations without an explicit command default to semantic 'v2-make'.",
     )
-    parser.add_argument("--template", default=str(DEFAULT_TEMPLATE), help="Path to template PPTX.")
+    parser.add_argument("--template", default=str(DEFAULT_TEMPLATE), help="Path to template PPTX. Legacy workflows only; V2 uses --theme.")
     parser.add_argument("--html", default=str(DEFAULT_HTML), help="Path to source HTML file.")
     parser.add_argument(
         "--deck-json",
@@ -220,8 +359,10 @@ def main():
     parser.add_argument("--port", type=int, default=8765, help="Port used by local web services such as clarify-web.")
     raw_argv = sys.argv[1:]
     args = parser.parse_args()
+    validate_command_name(args.command, parser)
     validate_slide_args(args, parser)
     effective_command, explicit_command = resolve_effective_command(raw_argv, args)
+    validate_v2_option_compatibility(raw_argv, effective_command=effective_command, parser=parser)
     emit_command_notice(explicit_command, args.command, effective_command)
 
     template_path = Path(args.template)
@@ -232,6 +373,28 @@ def main():
     planner_command = resolve_external_planner_command(args.planner_command)
     v2_theme = args.theme.strip() or "business_red"
     v2_output_dir = DEFAULT_V2_OUTPUT_DIR if output_dir == DEFAULT_OUTPUT_DIR else output_dir
+    resolved_topic = args.topic.strip()
+    resolved_brief = brief_text
+    resolved_audience = args.audience
+    resolved_chapters = args.chapters
+    resolved_min_slides = args.min_slides
+    resolved_max_slides = args.max_slides
+
+    if effective_command in {"v2-outline", "v2-plan", "v2-make"} and args.topic.strip():
+        (
+            resolved_topic,
+            resolved_brief,
+            resolved_audience,
+            resolved_chapters,
+            resolved_min_slides,
+            resolved_max_slides,
+            v2_theme,
+        ) = resolve_v2_clarified_context(
+            args,
+            brief_text=brief_text,
+            effective_command=effective_command,
+            parser=parser,
+        )
 
     if effective_command == "clarify":
         if not args.topic.strip():
@@ -257,18 +420,18 @@ def main():
         return
 
     if effective_command == "v2-outline":
-        if not args.topic.strip():
+        if not resolved_topic:
             parser.error("--topic is required when command is 'v2-outline'.")
         outline = generate_outline_with_ai(
             OutlineGenerationRequest(
-                topic=args.topic,
-                brief=brief_text,
-                audience=args.audience,
+                topic=resolved_topic,
+                brief=resolved_brief,
+                audience=resolved_audience,
                 language=args.language,
                 theme=v2_theme,
-                exact_slides=args.chapters or None,
-                min_slides=args.min_slides or 6,
-                max_slides=args.max_slides or 10,
+                exact_slides=resolved_chapters or None,
+                min_slides=resolved_min_slides or 6,
+                max_slides=resolved_max_slides or 10,
             ),
             model=args.llm_model or None,
         )
@@ -278,7 +441,7 @@ def main():
         return
 
     if effective_command == "v2-plan":
-        if not args.topic.strip() and not args.outline_json:
+        if not resolved_topic and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-plan'.")
         if args.outline_json:
             outline = load_outline_document(Path(args.outline_json))
@@ -286,14 +449,14 @@ def main():
         else:
             outline = generate_outline_with_ai(
                 OutlineGenerationRequest(
-                    topic=args.topic,
-                    brief=brief_text,
-                    audience=args.audience,
+                    topic=resolved_topic,
+                    brief=resolved_brief,
+                    audience=resolved_audience,
                     language=args.language,
                     theme=v2_theme,
-                    exact_slides=args.chapters or None,
-                    min_slides=args.min_slides or 6,
-                    max_slides=args.max_slides or 10,
+                    exact_slides=resolved_chapters or None,
+                    min_slides=resolved_min_slides or 6,
+                    max_slides=resolved_max_slides or 10,
                 ),
                 model=args.llm_model or None,
             )
@@ -301,10 +464,10 @@ def main():
             write_outline_document(outline, outline_output)
         semantic_payload = generate_semantic_deck_with_ai(
             DeckGenerationRequest(
-                topic=args.topic or "AI Auto PPT",
+                topic=resolved_topic or "AI Auto PPT",
                 outline=outline,
-                brief=brief_text,
-                audience=args.audience,
+                brief=resolved_brief,
+                audience=resolved_audience,
                 language=args.language,
                 theme=v2_theme,
                 author=args.author,
@@ -313,7 +476,7 @@ def main():
         )
         validated_deck = compile_semantic_deck_payload(
             semantic_payload,
-            default_title=args.topic or "AI Auto PPT",
+            default_title=resolved_topic or "AI Auto PPT",
             default_theme=v2_theme,
             default_language=args.language,
             default_author=args.author,
@@ -356,18 +519,18 @@ def main():
         return
 
     if effective_command == "v2-make":
-        if not args.topic.strip() and not args.outline_json:
+        if not resolved_topic and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-make'.")
         result = make_v2_ppt(
-            topic=args.topic or "AI Auto PPT",
-            brief=brief_text,
-            audience=args.audience,
+            topic=resolved_topic or "AI Auto PPT",
+            brief=resolved_brief,
+            audience=resolved_audience,
             language=args.language,
             theme=v2_theme,
             author=args.author,
-            exact_slides=args.chapters or None,
-            min_slides=args.min_slides or 6,
-            max_slides=args.max_slides or 10,
+            exact_slides=resolved_chapters or None,
+            min_slides=resolved_min_slides or 6,
+            max_slides=resolved_max_slides or 10,
             output_dir=v2_output_dir,
             output_prefix=args.output_name,
             model=args.llm_model or None,

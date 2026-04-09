@@ -40,14 +40,14 @@ DEFAULT_AI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/
 def infer_llm_api_style(base_url: str, configured_style: str | None = None) -> str:
     candidate = (configured_style or os.environ.get("SIE_AUTOPPT_LLM_API_STYLE", "")).strip().lower().replace("-", "_")
     if candidate:
-        if candidate not in {"responses", "chat_completions"}:
+        if candidate not in {"responses", "chat_completions", "auto"}:
             raise ValueError(f"Unsupported SIE_AUTOPPT_LLM_API_STYLE: {candidate}")
         return candidate
 
     netloc = urlparse(base_url).netloc.lower()
     if "api.openai.com" in netloc or "openrouter.ai" in netloc:
         return "responses"
-    return "chat_completions"
+    return "auto"
 
 
 DEFAULT_AI_API_STYLE = infer_llm_api_style(DEFAULT_AI_BASE_URL)

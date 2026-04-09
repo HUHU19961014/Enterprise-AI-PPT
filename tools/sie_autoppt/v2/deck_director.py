@@ -480,6 +480,18 @@ def _split_evenly(items: list[str]) -> tuple[list[str], list[str]]:
     return items[:midpoint], items[midpoint:]
 
 
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        normalized = _strip_text(item)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
 def _statement_texts(blocks: list[dict[str, Any]]) -> list[str]:
     return [_strip_text(block.get("text")) for block in blocks if block.get("kind") == "statement" and _strip_text(block.get("text"))]
 
@@ -556,6 +568,18 @@ def _flatten_matrix_block(block: dict[str, Any]) -> list[str]:
             text = f"{text}: {cell['body']}"
         result.append(text)
     return result
+
+
+def _collect_slide_insights(features: SemanticSlideFeatures, limit: int = 4) -> list[str]:
+    insights: list[str] = []
+    if features.key_message:
+        insights.append(features.key_message)
+    insights.extend(features.statements)
+    for block in features.bullet_blocks:
+        insights.extend(block["items"])
+    if features.subtitle:
+        insights.append(features.subtitle)
+    return _dedupe_preserve_order(insights)[:limit]
 
 
 def _compile_semantic_slide_legacy_unused(slide: dict[str, Any]) -> dict[str, Any]:
@@ -736,16 +760,20 @@ def plan_semantic_slide_layout(slide: dict[str, Any]) -> SemanticLayoutPlan:
         candidates.append((90, "title_image", "image-block"))
     if features.intent in {"summary", "conclusion"} and not features.bullet_blocks and len(features.statements) <= 1:
         candidates.append((85, "title_only", "single-conclusion-statement"))
-    if len(features.card_blocks) == 1 and len(features.card_blocks[0]["cards"]) == 2 and not features.bullet_blocks:
-        candidates.append((82, "two_columns", "cards-pair"))
-    if len(features.stat_blocks) == 1 and len(features.stat_blocks[0]["metrics"]) == 2 and not features.bullet_blocks:
-        candidates.append((81, "two_columns", "stats-pair"))
     if len(features.matrix_blocks) == 1:
-        candidates.append((79, "two_columns", "matrix-block"))
+        candidates.append((84, "matrix_grid", "matrix-block"))
+    if len(features.stat_blocks) == 1 and len(features.stat_blocks[0]["metrics"]) >= 3:
+        candidates.append((83, "stats_dashboard", "stats-block"))
+    if len(features.card_blocks) == 1 and len(features.card_blocks[0]["cards"]) >= 3 and not features.bullet_blocks:
+        candidates.append((82, "cards_grid", "cards-grid"))
+    if len(features.timeline_blocks) == 1:
+        candidates.append((81, "timeline", "timeline-block"))
+    if len(features.card_blocks) == 1 and len(features.card_blocks[0]["cards"]) == 2 and not features.bullet_blocks:
+        candidates.append((80, "two_columns", "cards-pair"))
+    if len(features.stat_blocks) == 1 and len(features.stat_blocks[0]["metrics"]) == 2 and not features.bullet_blocks:
+        candidates.append((79, "two_columns", "stats-pair"))
     if len(features.bullet_blocks) >= 2:
-        candidates.append((80, "two_columns", "multi-block-bullets"))
-    if features.timeline_blocks and len(features.timeline_blocks[0]["stages"]) >= 4:
-        candidates.append((76, "two_columns", "dense-timeline"))
+        candidates.append((78, "two_columns", "multi-block-bullets"))
     if len(features.content_items) > 6:
         candidates.append((70, "two_columns", "dense-content"))
     if features.content_items:
@@ -807,6 +835,49 @@ def _compile_semantic_slide(slide: dict[str, Any]) -> dict[str, Any]:
             "slide_id": features.slide_id,
             "layout": "title_only",
             "title": features.statements[0] if features.statements else (features.key_message or features.title),
+        }
+
+    if plan.layout == "timeline" and len(features.timeline_blocks) == 1:
+        block = features.timeline_blocks[0]
+        return {
+            "slide_id": features.slide_id,
+            "layout": "timeline",
+            "title": features.title,
+            "heading": block.get("heading") or features.key_message or features.subtitle,
+            "stages": block["stages"],
+        }
+
+    if plan.layout == "stats_dashboard" and len(features.stat_blocks) == 1:
+        block = features.stat_blocks[0]
+        return {
+            "slide_id": features.slide_id,
+            "layout": "stats_dashboard",
+            "title": features.title,
+            "heading": block.get("heading") or features.key_message or features.subtitle,
+            "metrics": block["metrics"],
+            "insights": _collect_slide_insights(features, limit=4),
+        }
+
+    if plan.layout == "matrix_grid" and len(features.matrix_blocks) == 1:
+        block = features.matrix_blocks[0]
+        return {
+            "slide_id": features.slide_id,
+            "layout": "matrix_grid",
+            "title": features.title,
+            "heading": block.get("heading") or features.key_message or features.subtitle,
+            "x_axis": block.get("x_axis"),
+            "y_axis": block.get("y_axis"),
+            "cells": block["cells"],
+        }
+
+    if plan.layout == "cards_grid" and len(features.card_blocks) == 1:
+        block = features.card_blocks[0]
+        return {
+            "slide_id": features.slide_id,
+            "layout": "cards_grid",
+            "title": features.title,
+            "heading": block.get("heading") or features.key_message or features.subtitle,
+            "cards": block["cards"],
         }
 
     if plan.layout == "two_columns" and len(features.card_blocks) == 1 and len(features.card_blocks[0]["cards"]) == 2:

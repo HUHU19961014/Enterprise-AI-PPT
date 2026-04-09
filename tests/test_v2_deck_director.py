@@ -197,7 +197,8 @@ class V2DeckDirectorTests(unittest.TestCase):
         )
 
         slide = validated.deck.slides[0]
-        self.assertEqual(slide.layout, "two_columns")
+        self.assertEqual(slide.layout, "timeline")
+        self.assertEqual(len(slide.stages), 4)
 
     def test_compile_matrix_block_to_two_columns(self):
         validated = compile_semantic_deck_payload(
@@ -227,9 +228,70 @@ class V2DeckDirectorTests(unittest.TestCase):
         )
 
         slide = validated.deck.slides[0]
-        self.assertEqual(slide.layout, "two_columns")
-        self.assertEqual(slide.left.heading, "Impact")
-        self.assertEqual(slide.right.heading, "Probability")
+        self.assertEqual(slide.layout, "matrix_grid")
+        self.assertEqual(slide.x_axis, "Impact")
+        self.assertEqual(slide.y_axis, "Probability")
+
+    def test_compile_stats_block_to_dashboard_layout(self):
+        validated = compile_semantic_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "title": "KPI Overview",
+                        "intent": "analysis",
+                        "key_message": "Stabilize delivery while improving throughput.",
+                        "blocks": [
+                            {
+                                "kind": "stats",
+                                "heading": "Core Metrics",
+                                "metrics": [
+                                    {"label": "OTD", "value": "95%", "note": "Above target"},
+                                    {"label": "Yield", "value": "98%", "note": "Stable month-on-month"},
+                                    {"label": "Inventory", "value": "-12%", "note": "Healthy reduction"},
+                                ],
+                            },
+                            {"kind": "bullets", "items": ["Focus on OTD stability", "Keep defect closure within weekly cadence"]},
+                        ],
+                    }
+                ],
+            }
+        )
+
+        slide = validated.deck.slides[0]
+        self.assertEqual(slide.layout, "stats_dashboard")
+        self.assertEqual(len(slide.metrics), 3)
+        self.assertGreaterEqual(len(slide.insights), 2)
+
+    def test_compile_cards_block_to_cards_grid_layout(self):
+        validated = compile_semantic_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "title": "Capability Map",
+                        "intent": "framework",
+                        "blocks": [
+                            {
+                                "kind": "cards",
+                                "heading": "Three Capability Themes",
+                                "cards": [
+                                    {"title": "Plan", "body": "Align scope and governance"},
+                                    {"title": "Build", "body": "Deliver reusable workflows"},
+                                    {"title": "Operate", "body": "Close the improvement loop"},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        slide = validated.deck.slides[0]
+        self.assertEqual(slide.layout, "cards_grid")
+        self.assertEqual(len(slide.cards), 3)
 
 if __name__ == "__main__":
     unittest.main()

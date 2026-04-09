@@ -126,6 +126,71 @@ class V2RenderTests(unittest.TestCase):
             self.assertIn("applied", rewrite_payload)
             self.assertIn("actions", rewrite_payload)
 
+    def test_generate_ppt_renders_semantic_specialized_layouts(self):
+        payload = {
+            "meta": {"title": "Semantic Layouts", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "layout": "timeline",
+                    "title": "Roadmap",
+                    "heading": "Three delivery phases",
+                    "stages": [
+                        {"title": "Q1", "detail": "Align scope"},
+                        {"title": "Q2", "detail": "Build workflows"},
+                        {"title": "Q3", "detail": "Scale governance"},
+                    ],
+                },
+                {
+                    "slide_id": "s2",
+                    "layout": "stats_dashboard",
+                    "title": "KPI Dashboard",
+                    "heading": "Core Metrics",
+                    "metrics": [
+                        {"label": "OTD", "value": "95%", "note": "Above target"},
+                        {"label": "Yield", "value": "98%", "note": "Stable"},
+                        {"label": "Inventory", "value": "-12%", "note": "Healthy reduction"},
+                    ],
+                    "insights": ["Protect OTD stability", "Continue weekly issue closure"],
+                },
+                {
+                    "slide_id": "s3",
+                    "layout": "matrix_grid",
+                    "title": "Risk Matrix",
+                    "x_axis": "Impact",
+                    "y_axis": "Probability",
+                    "cells": [
+                        {"title": "Low-Low", "body": "Monitor"},
+                        {"title": "Low-High", "body": "Prepare response"},
+                        {"title": "High-Low", "body": "Assign owner"},
+                        {"title": "High-High", "body": "Escalate now"},
+                    ],
+                },
+                {
+                    "slide_id": "s4",
+                    "layout": "cards_grid",
+                    "title": "Capability Themes",
+                    "cards": [
+                        {"title": "Plan", "body": "Align scope"},
+                        {"title": "Build", "body": "Deliver workflows"},
+                        {"title": "Operate", "body": "Close loop"},
+                    ],
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ppt_path = Path(temp_dir) / "semantic_layouts.pptx"
+            log_path = Path(temp_dir) / "semantic_layouts.log.txt"
+            result = generate_ppt(payload, output_path=ppt_path, log_path=log_path)
+
+            self.assertTrue(result.output_path.exists())
+            log_text = log_path.read_text(encoding="utf-8")
+            self.assertIn("semantic timeline layout", log_text)
+            self.assertIn("semantic stats dashboard layout", log_text)
+            self.assertIn("semantic matrix grid layout", log_text)
+            self.assertIn("semantic cards grid layout", log_text)
+
     def test_generate_ppt_applies_single_rewrite_pass(self):
         payload = {
             "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},

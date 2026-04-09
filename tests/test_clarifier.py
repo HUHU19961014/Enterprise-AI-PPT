@@ -15,11 +15,12 @@ class ClarifierTests(unittest.TestCase):
 
         self.assertEqual(result.status, "needs_clarification")
         self.assertEqual(result.guide_mode, "full")
+        self.assertTrue(result.blocking)
         self.assertEqual(
             result.missing_dimensions,
-            ("purpose", "audience", "slides", "style", "core_content"),
+            ("topic", "purpose", "audience", "slides", "style", "template_theme", "core_content"),
         )
-        self.assertIn("直接生成", result.message)
+        self.assertIn("1.", result.response_template)
 
     def test_concrete_topic_triggers_partial_guidance(self):
         result = clarify_user_input("帮我做Q2业绩汇报，5页", prefer_llm=False)
@@ -30,6 +31,7 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(result.requirements.chapters, 5)
         self.assertIn("audience", result.missing_dimensions)
         self.assertIn("style", result.missing_dimensions)
+        self.assertIn("template_theme", result.missing_dimensions)
 
     def test_skip_keyword_short_circuits_clarification(self):
         result = clarify_user_input("直接生成，做一份产品方案PPT", prefer_llm=False)
@@ -38,12 +40,12 @@ class ClarifierTests(unittest.TestCase):
         self.assertTrue(result.skipped)
         self.assertEqual(result.guide_mode, "none")
 
-    def test_session_resume_merges_previous_answers(self):
+    def test_session_resume_merges_previous_answers_and_theme(self):
         first = clarify_user_input("帮我做Q2业绩汇报，5页", prefer_llm=False)
         restored_session = load_clarifier_session(first.session.to_json())
 
         second = clarify_user_input(
-            "给公司领导看，商务专业风格，重点讲增长数据、技术突破和下阶段计划",
+            "给公司领导看，商务专业风格，用 business_red，重点讲增长数据、技术突破和下一阶段计划",
             session=restored_session,
             prefer_llm=False,
         )
@@ -52,14 +54,35 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(second.requirements.topic, "Q2业绩汇报")
         self.assertEqual(second.requirements.audience, "公司领导")
         self.assertEqual(second.requirements.style, "商务专业")
+        self.assertEqual(second.requirements.theme, "business_red")
         self.assertIn("增长数据", second.requirements.core_content)
         self.assertEqual(second.requirements.chapters, 5)
+
+    def test_full_guidance_accepts_choice_style_answers(self):
+        first = clarify_user_input("帮我做PPT", prefer_llm=False)
+        restored_session = load_clarifier_session(first.session.to_json())
+
+        second = clarify_user_input(
+            "1. Q2经营复盘\n2A\n3A\n4B\n5A\n6A\n7. 重点讲收入增长、重点风险和下季度动作",
+            session=restored_session,
+            prefer_llm=False,
+        )
+
+        self.assertEqual(second.status, "ready")
+        self.assertEqual(second.requirements.topic, "Q2经营复盘")
+        self.assertEqual(second.requirements.purpose, "工作汇报")
+        self.assertEqual(second.requirements.audience, "公司领导")
+        self.assertEqual(second.requirements.slide_hint, "10页左右")
+        self.assertEqual(second.requirements.style, "商务专业")
+        self.assertEqual(second.requirements.theme, "business_red")
+        self.assertIn("收入增长", second.requirements.core_content)
 
     def test_derive_planning_context_enriches_request_fields(self):
         context = derive_planning_context(
             topic="帮我做Q2业绩汇报，5页，给公司领导看，商务专业风格",
             brief="重点讲增长数据、技术突破、下阶段计划",
             audience=DEFAULT_AUDIENCE_HINT,
+            theme="business_red",
             prefer_llm=False,
         )
 
@@ -67,7 +90,7 @@ class ClarifierTests(unittest.TestCase):
         self.assertEqual(context.topic, "Q2业绩汇报")
         self.assertEqual(context.audience, "公司领导")
         self.assertEqual(context.chapters, 5)
-        self.assertIn("商务专业", context.brief)
+        self.assertIn("Theme: business_red", context.brief)
         self.assertIn("增长数据", context.brief)
 
     def test_session_json_round_trip_is_stable(self):
