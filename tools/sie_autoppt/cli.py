@@ -50,6 +50,7 @@ from .v2 import (
     write_outline_document,
 )
 from .v2.services import DeckGenerationRequest, OutlineGenerationRequest
+from .v2.services import ensure_generation_context
 from .v2.visual_review import iterate_visual_review, review_deck_once
 from .v2.io import DEFAULT_V2_OUTPUT_DIR
 from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
@@ -658,10 +659,22 @@ def main():
     if effective_command == "v2-plan":
         if not resolved_topic and not args.outline_json:
             parser.error("--topic or --outline-json is required when command is 'v2-plan'.")
+        shared_context = None
+        shared_strategy = None
         if args.outline_json:
             outline = load_outline_document(Path(args.outline_json))
             outline_output = None
         else:
+            shared_context, shared_strategy = ensure_generation_context(
+                topic=resolved_topic,
+                brief=resolved_brief,
+                audience=resolved_audience,
+                language=args.language,
+                generation_mode=args.generation_mode,
+                structured_context=None,
+                strategic_analysis=None,
+                model=args.llm_model or None,
+            )
             outline = generate_outline_with_ai(
                 OutlineGenerationRequest(
                     topic=resolved_topic,
@@ -673,6 +686,8 @@ def main():
                     min_slides=resolved_min_slides or 6,
                     max_slides=resolved_max_slides or 10,
                     generation_mode=args.generation_mode,
+                    structured_context=shared_context,
+                    strategic_analysis=shared_strategy,
                 ),
                 model=args.llm_model or None,
             )
@@ -688,6 +703,8 @@ def main():
                 theme=v2_theme,
                 author=args.author,
                 generation_mode=args.generation_mode,
+                structured_context=shared_context,
+                strategic_analysis=shared_strategy,
             ),
             model=args.llm_model or None,
         )

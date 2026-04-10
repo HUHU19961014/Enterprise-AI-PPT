@@ -493,6 +493,53 @@ class CliTests(unittest.TestCase):
             self.assertEqual(lines[0], str(brief_output_path))
             self.assertEqual(lines[3], str(fake_ppt_path))
 
+    def test_v2_plan_reuses_generation_context_between_outline_and_semantic_deck(self):
+        stdout = io.StringIO()
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "背景", "goal": "说明背景。"},
+                    {"page_no": 2, "title": "方案", "goal": "说明方案。"},
+                    {"page_no": 3, "title": "行动", "goal": "说明行动。"},
+                ]
+            }
+        )
+        semantic_payload = {
+            "meta": {"title": "AI strategy", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {"slide_id": "s1", "title": "结论", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "先判断再展开。"}]},
+            ],
+        }
+        shared_context = {"industry": "制造", "decision_focus": "预算"}
+        shared_strategy = {"core_tension": "投入与回报", "recommended_narrative_arc": "先判断再展开"}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-plan", "--topic", "AI strategy", "--output-dir", temp_dir],
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.resolve_v2_clarified_context",
+                    return_value=("AI strategy", "", "公司领导", None, 6, 8, "business_red"),
+                ),
+                patch(
+                    "tools.sie_autoppt.cli.ensure_generation_context",
+                    return_value=(shared_context, shared_strategy),
+                ) as context_mock,
+                patch("tools.sie_autoppt.cli.generate_outline_with_ai", return_value=outline) as outline_mock,
+                patch("tools.sie_autoppt.cli.generate_semantic_deck_with_ai", return_value=semantic_payload) as semantic_mock,
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            context_mock.assert_called_once()
+            outline_request = outline_mock.call_args.args[0]
+            deck_request = semantic_mock.call_args.args[0]
+            self.assertEqual(outline_request.structured_context, shared_context)
+            self.assertEqual(outline_request.strategic_analysis, shared_strategy)
+            self.assertEqual(deck_request.structured_context, shared_context)
+            self.assertEqual(deck_request.strategic_analysis, shared_strategy)
+
     def test_removed_legacy_command_is_rejected(self):
         stderr = io.StringIO()
         with (
