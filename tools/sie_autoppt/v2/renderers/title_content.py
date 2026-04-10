@@ -13,6 +13,7 @@ from .common import (
     parse_timeline_items,
     resolve_body_font_size,
 )
+from .layout_constants import TITLE_BAND, TITLE_CONTENT
 
 
 def render_title_content(prs, slide_data: TitleContentSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
@@ -20,27 +21,34 @@ def render_title_content(prs, slide_data: TitleContentSlide, theme: ThemeSpec, l
     fill_background(slide, theme)
     add_textbox(
         slide,
-        left=0.78,
-        top=0.5,
-        width=11.7,
-        height=0.55,
+        left=TITLE_BAND.left,
+        top=TITLE_BAND.top,
+        width=TITLE_BAND.width,
+        height=TITLE_BAND.height,
         text=slide_data.title,
         font_name=theme.fonts.title,
         font_size=theme.font_sizes.title,
         color_hex=theme.colors.primary,
         bold=True,
     )
-    add_card(slide, 0.78, 1.28, 11.72, 4.95, theme)
+    add_card(
+        slide,
+        TITLE_CONTENT.card.left,
+        TITLE_CONTENT.card.top,
+        TITLE_CONTENT.card.width,
+        TITLE_CONTENT.card.height,
+        theme,
+    )
     timeline_items = parse_timeline_items(list(slide_data.content))
     if timeline_items:
         log.info(f"{slide_data.slide_id}: rendered staged content as timeline visualization.")
         add_timeline_flow(
             slide,
             timeline_items,
-            left=1.0,
-            top=1.55,
-            width=11.06,
-            height=4.2,
+            left=TITLE_CONTENT.timeline_left,
+            top=TITLE_CONTENT.timeline_top,
+            width=TITLE_CONTENT.timeline_width,
+            height=TITLE_CONTENT.timeline_height,
             theme=theme,
         )
     else:
@@ -50,10 +58,10 @@ def render_title_content(prs, slide_data: TitleContentSlide, theme: ThemeSpec, l
         add_bullet_list(
             slide,
             slide_data.content,
-            left=1.02,
-            top=1.6,
-            width=11.1,
-            height=4.25,
+            left=TITLE_CONTENT.content_left,
+            top=TITLE_CONTENT.content_top,
+            width=TITLE_CONTENT.content_width,
+            height=TITLE_CONTENT.content_height,
             theme=theme,
             font_size=font_size,
         )
