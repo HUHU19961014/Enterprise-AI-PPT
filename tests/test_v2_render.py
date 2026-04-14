@@ -231,3 +231,61 @@ class V2RenderTests(unittest.TestCase):
             self.assertTrue(rewrite_payload["applied"])
             self.assertGreater(rewrite_payload["action_count"], 0)
 
+    def test_generate_ppt_localizes_stats_dashboard_insights_title_for_zh_cn(self):
+        payload = {
+            "meta": {"title": "语义布局", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "layout": "stats_dashboard",
+                    "title": "运营指标",
+                    "heading": "关键指标",
+                    "metrics": [
+                        {"label": "交付率", "value": "95%", "note": "稳定"},
+                        {"label": "良率", "value": "98%", "note": "提升"},
+                    ],
+                    "insights": ["保持关键产线稳定运行", "缩短异常闭环周期"],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ppt_path = Path(temp_dir) / "i18n_stats_zh.pptx"
+            log_path = Path(temp_dir) / "i18n_stats_zh.log.txt"
+            result = generate_ppt(payload, output_path=ppt_path, log_path=log_path)
+            prs = Presentation(str(result.output_path))
+            all_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
+
+        self.assertIn("关键洞察", all_text)
+        self.assertNotIn("Key Insights", all_text)
+
+    def test_generate_ppt_renders_stats_dashboard_with_six_metrics_boundary_case(self):
+        payload = {
+            "meta": {"title": "Boundary Metrics", "theme": "sie_consulting_fixed", "language": "en-US", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "layout": "stats_dashboard",
+                    "title": "Operations Dashboard",
+                    "heading": "Top Metrics",
+                    "metrics": [
+                        {"label": "M1", "value": "1"},
+                        {"label": "M2", "value": "2"},
+                        {"label": "M3", "value": "3"},
+                        {"label": "M4", "value": "4"},
+                        {"label": "M5", "value": "5"},
+                        {"label": "M6", "value": "6"},
+                    ],
+                    "insights": ["Keep trend stable"],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ppt_path = Path(temp_dir) / "stats_boundary.pptx"
+            log_path = Path(temp_dir) / "stats_boundary.log.txt"
+            result = generate_ppt(payload, output_path=ppt_path, log_path=log_path)
+            prs = Presentation(str(result.output_path))
+            all_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, "text"))
+
+            self.assertTrue(result.output_path.exists())
+            self.assertIn("Key Insights", all_text)
+

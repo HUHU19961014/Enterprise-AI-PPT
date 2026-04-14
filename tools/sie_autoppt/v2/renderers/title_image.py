@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from ..schema import TitleImageSlide
-from ..theme_loader import ThemeSpec
 from .common import (
+    RenderContext,
     add_architecture_placeholder,
     add_blank_slide,
     add_bullet_list,
@@ -18,7 +18,12 @@ from .common import (
 from .layout_constants import TITLE_BAND, TITLE_IMAGE
 
 
-def render_title_image(prs, slide_data: TitleImageSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_title_image(ctx: RenderContext, slide_data: TitleImageSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(

@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 import mimetypes
 import os
 import threading
@@ -19,6 +21,8 @@ from .config import (
     infer_llm_api_style,
 )
 from .exceptions import OpenAIConfigurationError, OpenAIHTTPStatusError, OpenAIResponsesError
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,8 @@ def _probe_local_openai_compat(url: str, timeout_sec: float = 0.35) -> bool:
             return 200 <= int(resp.status) < 500
     except error.HTTPError as exc:
         return 200 <= int(exc.code) < 500
-    except Exception:
+    except Exception as exc:
+        LOGGER.debug("local OpenAI-compatible probe failed for %s: %s", url, exc)
         return False
 
 
@@ -272,6 +277,21 @@ class OpenAIResponsesClient:
             schema=schema,
         )
 
+    async def acreate_structured_json(
+        self,
+        developer_prompt: str,
+        user_prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self.create_structured_json,
+            developer_prompt=developer_prompt,
+            user_prompt=user_prompt,
+            schema_name=schema_name,
+            schema=schema,
+        )
+
     def create_structured_json_with_user_items(
         self,
         developer_prompt: str,
@@ -298,6 +318,45 @@ class OpenAIResponsesClient:
                     user_items=user_items,
                 )
             raise
+
+    async def acreate_structured_json_with_user_items(
+        self,
+        developer_prompt: str,
+        user_items: list[dict[str, Any]],
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self.create_structured_json_with_user_items,
+            developer_prompt=developer_prompt,
+            user_items=user_items,
+            schema_name=schema_name,
+            schema=schema,
+        )
+
+    async def acreate_structured_json_batch(
+        self,
+        requests: list[dict[str, Any]],
+        *,
+        concurrency: int = 4,
+    ) -> list[dict[str, Any]]:
+        if not requests:
+            return []
+        bounded = max(1, int(concurrency))
+        semaphore = asyncio.Semaphore(bounded)
+        results: list[dict[str, Any] | None] = [None] * len(requests)
+
+        async def _run(index: int, request_item: dict[str, Any]) -> None:
+            async with semaphore:
+                results[index] = await self.acreate_structured_json_with_user_items(
+                    developer_prompt=str(request_item["developer_prompt"]),
+                    user_items=list(request_item["user_items"]),
+                    schema_name=str(request_item["schema_name"]),
+                    schema=dict(request_item["schema"]),
+                )
+
+        await asyncio.gather(*(_run(index, item) for index, item in enumerate(requests)))
+        return [item for item in results if item is not None]
 
     def _create_responses_json(
         self,

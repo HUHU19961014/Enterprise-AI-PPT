@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from ..schema import StatsDashboardSlide
-from ..theme_loader import ThemeSpec
-from .common import add_blank_slide, add_bullet_list, add_card, add_page_number, add_textbox, fill_background
+from .common import RenderContext, add_blank_slide, add_bullet_list, add_card, add_page_number, add_textbox, fill_background
 from .layout_constants import STATS_DASHBOARD, TITLE_BAND
 
 
@@ -14,7 +13,28 @@ def _metric_grid(metrics_count: int) -> tuple[int, int]:
     return 3, 2
 
 
-def render_stats_dashboard(prs, slide_data: StatsDashboardSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def _insights_title(slide_data: StatsDashboardSlide) -> str:
+    probe_text = "".join(
+        [
+            slide_data.title,
+            slide_data.heading or "",
+            *[metric.label + metric.value + (metric.note or "") for metric in slide_data.metrics],
+            *slide_data.insights,
+        ]
+    )
+    has_cjk = any("\u4e00" <= char <= "\u9fff" for char in probe_text)
+    return "关键洞察" if has_cjk else "Key Insights"
+
+
+def render_stats_dashboard(
+    ctx: RenderContext,
+    slide_data: StatsDashboardSlide,
+):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
@@ -62,7 +82,11 @@ def render_stats_dashboard(prs, slide_data: StatsDashboardSlide, theme: ThemeSpe
     for index, metric in enumerate(slide_data.metrics):
         row = index // cols
         col = index % cols
-        left = STATS_DASHBOARD.metrics_card_left + STATS_DASHBOARD.metric_outer_left_padding + col * (card_width + gap_x)
+        left = (
+            STATS_DASHBOARD.metrics_card_left
+            + STATS_DASHBOARD.metric_outer_left_padding
+            + col * (card_width + gap_x)
+        )
         top = metrics_top + STATS_DASHBOARD.metric_outer_top_padding + row * (card_height + gap_y)
         add_card(slide, left, top, card_width, card_height, theme)
         add_textbox(
@@ -117,7 +141,7 @@ def render_stats_dashboard(prs, slide_data: StatsDashboardSlide, theme: ThemeSpe
             top=STATS_DASHBOARD.insights_title_top,
             width=STATS_DASHBOARD.insights_title_width,
             height=STATS_DASHBOARD.insights_title_height,
-            text="Key Insights",
+            text=_insights_title(slide_data),
             font_name=theme.fonts.title,
             font_size=theme.font_sizes.small + 1,
             color_hex=theme.colors.secondary,

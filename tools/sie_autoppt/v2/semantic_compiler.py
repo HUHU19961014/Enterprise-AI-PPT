@@ -12,98 +12,39 @@ from .semantic_router import (
     split_evenly,
 )
 from .semantic_schema_builder import SUPPORTED_SLIDE_INTENTS
-
-
-def _strip_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
+from .utils import normalize_data_sources, normalize_object_list, strip_text
 
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     result: list[str] = []
     for item in value:
-        text = _strip_text(item)
+        text = strip_text(item)
         if text:
             result.append(text)
     return result
 
 
+def normalize_list(
+    value: Any, *, required_keys: list[str], optional_keys: list[str] | None = None
+) -> list[dict[str, str]]:
+    return normalize_object_list(value, required_keys=required_keys, optional_keys=optional_keys)
+
+
 def _normalize_timeline_stages(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        title = _strip_text(item.get("title"))
-        detail = _strip_text(item.get("detail"))
-        if title:
-            result.append({"title": title, **({"detail": detail} if detail else {})})
-    return result
+    return normalize_list(value, required_keys=["title"], optional_keys=["detail"])
 
 
 def _normalize_cards(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        title = _strip_text(item.get("title"))
-        body = _strip_text(item.get("body"))
-        if title:
-            result.append({"title": title, **({"body": body} if body else {})})
-    return result
+    return normalize_list(value, required_keys=["title"], optional_keys=["body"])
 
 
 def _normalize_metrics(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        label = _strip_text(item.get("label"))
-        metric_value = _strip_text(item.get("value"))
-        note = _strip_text(item.get("note"))
-        if label and metric_value:
-            result.append({"label": label, "value": metric_value, **({"note": note} if note else {})})
-    return result
+    return normalize_list(value, required_keys=["label", "value"], optional_keys=["note"])
 
 
 def _normalize_matrix_cells(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        title = _strip_text(item.get("title"))
-        body = _strip_text(item.get("body"))
-        if title:
-            result.append({"title": title, **({"body": body} if body else {})})
-    return result
-
-
-def _normalize_data_sources(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        claim = _strip_text(item.get("claim"))
-        source = _strip_text(item.get("source"))
-        confidence = _strip_text(item.get("confidence")).lower() or "medium"
-        if not claim or not source:
-            continue
-        if confidence not in {"high", "medium", "low"}:
-            confidence = "medium"
-        result.append({"claim": claim, "source": source, "confidence": confidence})
-    return result
+    return normalize_list(value, required_keys=["title"], optional_keys=["body"])
 
 
 def normalize_semantic_payload(
@@ -121,11 +62,11 @@ def normalize_semantic_payload(
     if not isinstance(meta, dict):
         meta = {}
     normalized_meta = {
-        "title": _strip_text(meta.get("title")) or default_title,
-        "theme": _strip_text(meta.get("theme")) or default_theme,
-        "language": _strip_text(meta.get("language")) or default_language,
-        "author": _strip_text(meta.get("author")) or default_author,
-        "version": _strip_text(meta.get("version")) or "2.0",
+        "title": strip_text(meta.get("title")) or default_title,
+        "theme": strip_text(meta.get("theme")) or default_theme,
+        "language": strip_text(meta.get("language")) or default_language,
+        "author": strip_text(meta.get("author")) or default_author,
+        "version": strip_text(meta.get("version")) or "2.0",
     }
 
     raw_slides = payload.get("slides", [])
@@ -136,13 +77,13 @@ def normalize_semantic_payload(
     for index, raw_slide in enumerate(raw_slides, start=1):
         if not isinstance(raw_slide, dict):
             raise ValueError(f"slide {index} must be an object.")
-        slide_id = _strip_text(raw_slide.get("slide_id")) or f"s{index}"
-        title = _strip_text(raw_slide.get("title"))
-        intent = _strip_text(raw_slide.get("intent"))
-        subtitle = _strip_text(raw_slide.get("subtitle")) or None
-        key_message = _strip_text(raw_slide.get("key_message")) or None
-        anti_argument = _strip_text(raw_slide.get("anti_argument")) or None
-        data_sources = _normalize_data_sources(raw_slide.get("data_sources"))
+        slide_id = strip_text(raw_slide.get("slide_id")) or f"s{index}"
+        title = strip_text(raw_slide.get("title"))
+        intent = strip_text(raw_slide.get("intent"))
+        subtitle = strip_text(raw_slide.get("subtitle")) or None
+        key_message = strip_text(raw_slide.get("key_message")) or None
+        anti_argument = strip_text(raw_slide.get("anti_argument")) or None
+        data_sources = normalize_data_sources(raw_slide.get("data_sources"))
         raw_blocks = raw_slide.get("blocks", [])
         if not isinstance(raw_blocks, list):
             raise ValueError(f"slide {slide_id} blocks must be a list.")
@@ -151,12 +92,12 @@ def normalize_semantic_payload(
         for raw_block in raw_blocks:
             if not isinstance(raw_block, dict):
                 raise ValueError(f"slide {slide_id} contains a non-object block.")
-            kind = _strip_text(raw_block.get("kind"))
+            kind = strip_text(raw_block.get("kind"))
             if kind == "bullets":
                 items = _string_list(raw_block.get("items"))
                 if not items:
                     raise ValueError(f"slide {slide_id} bullets block must include items.")
-                blocks.append({"kind": "bullets", "heading": _strip_text(raw_block.get("heading")) or None, "items": items})
+                blocks.append({"kind": "bullets", "heading": strip_text(raw_block.get("heading")) or None, "items": items})
             elif kind == "comparison":
                 left_items = _string_list(raw_block.get("left_items"))
                 right_items = _string_list(raw_block.get("right_items"))
@@ -165,24 +106,24 @@ def normalize_semantic_payload(
                 blocks.append(
                     {
                         "kind": "comparison",
-                        "left_heading": _strip_text(raw_block.get("left_heading")),
+                        "left_heading": strip_text(raw_block.get("left_heading")),
                         "left_items": left_items,
-                        "right_heading": _strip_text(raw_block.get("right_heading")),
+                        "right_heading": strip_text(raw_block.get("right_heading")),
                         "right_items": right_items,
                     }
                 )
             elif kind == "image":
-                mode = _strip_text(raw_block.get("mode")) or "placeholder"
+                mode = strip_text(raw_block.get("mode")) or "placeholder"
                 blocks.append(
                     {
                         "kind": "image",
                         "mode": mode,
-                        "caption": _strip_text(raw_block.get("caption")) or None,
-                        "path": _strip_text(raw_block.get("path")) or None,
+                        "caption": strip_text(raw_block.get("caption")) or None,
+                        "path": strip_text(raw_block.get("path")) or None,
                     }
                 )
             elif kind == "statement":
-                text = _strip_text(raw_block.get("text"))
+                text = strip_text(raw_block.get("text"))
                 if not text:
                     raise ValueError(f"slide {slide_id} statement block must include text.")
                 blocks.append({"kind": "statement", "text": text})
@@ -190,17 +131,17 @@ def normalize_semantic_payload(
                 stages = _normalize_timeline_stages(raw_block.get("stages"))
                 if len(stages) < 2:
                     raise ValueError(f"slide {slide_id} timeline block must include at least 2 stages.")
-                blocks.append({"kind": "timeline", "heading": _strip_text(raw_block.get("heading")) or None, "stages": stages})
+                blocks.append({"kind": "timeline", "heading": strip_text(raw_block.get("heading")) or None, "stages": stages})
             elif kind == "cards":
                 cards = _normalize_cards(raw_block.get("cards"))
                 if len(cards) < 2:
                     raise ValueError(f"slide {slide_id} cards block must include at least 2 cards.")
-                blocks.append({"kind": "cards", "heading": _strip_text(raw_block.get("heading")) or None, "cards": cards})
+                blocks.append({"kind": "cards", "heading": strip_text(raw_block.get("heading")) or None, "cards": cards})
             elif kind == "stats":
                 metrics = _normalize_metrics(raw_block.get("metrics"))
                 if len(metrics) < 2:
                     raise ValueError(f"slide {slide_id} stats block must include at least 2 metrics.")
-                blocks.append({"kind": "stats", "heading": _strip_text(raw_block.get("heading")) or None, "metrics": metrics})
+                blocks.append({"kind": "stats", "heading": strip_text(raw_block.get("heading")) or None, "metrics": metrics})
             elif kind == "matrix":
                 cells = _normalize_matrix_cells(raw_block.get("cells"))
                 if len(cells) < 2:
@@ -208,9 +149,9 @@ def normalize_semantic_payload(
                 blocks.append(
                     {
                         "kind": "matrix",
-                        "heading": _strip_text(raw_block.get("heading")) or None,
-                        "x_axis": _strip_text(raw_block.get("x_axis")) or None,
-                        "y_axis": _strip_text(raw_block.get("y_axis")) or None,
+                        "heading": strip_text(raw_block.get("heading")) or None,
+                        "x_axis": strip_text(raw_block.get("x_axis")) or None,
+                        "y_axis": strip_text(raw_block.get("y_axis")) or None,
                         "cells": cells,
                     }
                 )

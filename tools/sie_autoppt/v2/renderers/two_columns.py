@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from ..schema import TwoColumnsSlide
-from ..theme_loader import ThemeSpec
 from .common import (
+    RenderContext,
     add_blank_slide,
     add_bullet_list,
     add_card,
@@ -16,7 +16,12 @@ from .common import (
 from .layout_constants import TITLE_BAND, TWO_COLUMNS
 
 
-def render_two_columns(prs, slide_data: TwoColumnsSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
@@ -61,9 +66,9 @@ def render_two_columns(prs, slide_data: TwoColumnsSlide, theme: ThemeSpec, log, 
         add_card(slide, right_left, card_top, card_width, card_height, theme)
         add_textbox(
             slide,
-            left=left_left + 0.22,
+            left=left_left + TWO_COLUMNS.inner_card_text_padding,
             top=card_top + TWO_COLUMNS.heading_top_offset,
-            width=card_width - 0.44,
+            width=card_width - TWO_COLUMNS.inner_card_text_padding * 2,
             height=TWO_COLUMNS.heading_height,
             text=slide_data.left.heading,
             font_name=theme.fonts.title,
@@ -73,9 +78,9 @@ def render_two_columns(prs, slide_data: TwoColumnsSlide, theme: ThemeSpec, log, 
         )
         add_textbox(
             slide,
-            left=right_left + 0.22,
+            left=right_left + TWO_COLUMNS.inner_card_text_padding,
             top=card_top + TWO_COLUMNS.heading_top_offset,
-            width=card_width - 0.44,
+            width=card_width - TWO_COLUMNS.inner_card_text_padding * 2,
             height=TWO_COLUMNS.heading_height,
             text=slide_data.right.heading,
             font_name=theme.fonts.title,

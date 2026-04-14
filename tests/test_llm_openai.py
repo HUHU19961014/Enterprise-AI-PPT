@@ -1,7 +1,7 @@
 import unittest
 from io import BytesIO
 import threading
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from urllib import error
 
 from tools.sie_autoppt.llm_openai import (
@@ -310,3 +310,79 @@ class OpenAIResponsesTests(unittest.TestCase):
             self.assertTrue(thread.is_alive())
             stop_event.set()
             thread.join(timeout=0.3)
+
+
+class OpenAIResponsesAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_acreate_structured_json_delegates_to_sync_implementation(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+        with patch.object(client, "create_structured_json", return_value={"ok": True}) as create_json:
+            result = await client.acreate_structured_json(
+                developer_prompt="system",
+                user_prompt="user",
+                schema_name="schema",
+                schema={"type": "object"},
+            )
+        self.assertEqual(result, {"ok": True})
+        create_json.assert_called_once()
+
+    async def test_acreate_structured_json_with_user_items_delegates_to_sync_implementation(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+        with patch.object(client, "create_structured_json_with_user_items", return_value={"ok": True}) as create_json:
+            result = await client.acreate_structured_json_with_user_items(
+                developer_prompt="system",
+                user_items=[{"type": "text", "text": "hello"}],
+                schema_name="schema",
+                schema={"type": "object"},
+            )
+        self.assertEqual(result, {"ok": True})
+        create_json.assert_called_once()
+
+    async def test_acreate_structured_json_batch_preserves_request_order(self):
+        client = OpenAIResponsesClient(
+            OpenAIResponsesConfig(
+                api_key="sk-test",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                timeout_sec=30,
+                reasoning_effort="low",
+                text_verbosity="low",
+                api_style="responses",
+            )
+        )
+        requests = [
+            {
+                "developer_prompt": "s1",
+                "user_items": [{"type": "text", "text": "u1"}],
+                "schema_name": "schema",
+                "schema": {"type": "object"},
+            },
+            {
+                "developer_prompt": "s2",
+                "user_items": [{"type": "text", "text": "u2"}],
+                "schema_name": "schema",
+                "schema": {"type": "object"},
+            },
+        ]
+        client.acreate_structured_json_with_user_items = AsyncMock(side_effect=[{"id": 1}, {"id": 2}])  # type: ignore[method-assign]
+        result = await client.acreate_structured_json_batch(requests, concurrency=2)
+        self.assertEqual(result, [{"id": 1}, {"id": 2}])

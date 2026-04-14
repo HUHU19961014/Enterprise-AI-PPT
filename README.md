@@ -141,6 +141,13 @@ Optional local gateway:
 $env:OPENAI_BASE_URL="http://localhost:8000/v1"
 ```
 
+Private/self-hosted deployment example:
+
+```powershell
+$env:OPENAI_BASE_URL="https://llm-gateway.internal.company/v1"
+$env:OPENAI_API_KEY="internal-gateway-token"
+```
+
 Useful optional variables:
 
 - `SIE_AUTOPPT_LLM_MODEL`: default model override.

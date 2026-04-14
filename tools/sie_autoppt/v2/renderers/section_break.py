@@ -3,12 +3,15 @@ from __future__ import annotations
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
 from ..schema import SectionBreakSlide
-from ..theme_loader import ThemeSpec
-from .common import add_blank_slide, add_page_number, add_textbox, fill_background
+from .common import RenderContext, add_blank_slide, add_page_number, add_textbox, fill_background
 from .layout_constants import SECTION_BREAK
 
 
-def render_section_break(prs, slide_data: SectionBreakSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_section_break(ctx: RenderContext, slide_data: SectionBreakSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme, theme.colors.primary)
     add_textbox(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -200,3 +201,42 @@ def review_visual_draft_with_ai(
         schema=_build_ai_schema(),
     )
     return _normalize_ai_review(response)
+
+
+async def review_visual_drafts_with_ai_batch(
+    items: list[tuple[VisualSpec, Path, Path | None]],
+    *,
+    model: str = "",
+    concurrency: int = 4,
+) -> list[AiReview]:
+    if not items:
+        return []
+    client = OpenAIResponsesClient(load_openai_responses_config(model=model or None))
+    requests: list[dict[str, Any]] = []
+    for spec, html_path, screenshot_path in items:
+        user_items: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    "Review this single-slide visual draft for enterprise sales quality. "
+                    "Give strict feedback and concrete fixes.\n\n"
+                    f"VisualSpec:\n{json.dumps(spec.to_dict(), ensure_ascii=False, indent=2)}\n\n"
+                    f"HTML:\n{html_path.read_text(encoding='utf-8')[:8000]}"
+                ),
+            }
+        ]
+        if screenshot_path is not None and screenshot_path.exists():
+            user_items.append({"type": "image_path", "path": str(screenshot_path)})
+        requests.append(
+            {
+                "developer_prompt": (
+                    "You are a strict business-slide visual reviewer. "
+                    "Return JSON only. Focus on clarity, hierarchy, persuasion, density, and brand fitness."
+                ),
+                "user_items": user_items,
+                "schema_name": "visual_draft_review",
+                "schema": _build_ai_schema(),
+            }
+        )
+    payloads = await client.acreate_structured_json_batch(requests, concurrency=concurrency)
+    return [_normalize_ai_review(payload) for payload in payloads]

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI-auto-ppt 全维度代码评估 v4.0</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #1e2530; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --green: #3fb950; --yellow: #d29922;
+    --red: #f85149; --blue: #58a6ff; --purple: #a371f7; --orange: #ffa657;
+    --teal: #39d353;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; }
+  a { color: var(--blue); text-decoration: none; }
+
+  /* Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+  /* Header */
+  .hero { background: linear-gradient(135deg, #1a2742 0%, #0d1117 60%, #1a1a2e 100%);
+    border: 1px solid var(--border); border-radius: 12px; padding: 40px; margin-bottom: 32px;
+    position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -50%; right: -10%; width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%); }
+  .hero-tag { display: inline-flex; align-items: center; gap: 8px; background: rgba(88,166,255,0.12);
+    border: 1px solid rgba(88,166,255,0.3); color: var(--blue); padding: 4px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+  .hero h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .hero-meta { color: var(--muted); font-size: 13px; display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
+  .hero-meta span { display: flex; align-items: center; gap: 6px; }
+
+  /* Score ring */
+  .score-ring-wrap { display: flex; justify-content: center; align-items: center; gap: 40px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 32px; margin-bottom: 32px; }
+  .ring-item { text-align: center; }
+  .ring-svg { width: 120px; height: 120px; }
+  .ring-bg { fill: none; stroke: var(--surface2); stroke-width: 8; }
+  .ring-fg { fill: none; stroke-width: 8; stroke-linecap: round;
+    transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset .6s ease; }
+  .ring-text { font-size: 22px; font-weight: 700; fill: var(--text); }
+  .ring-label { font-size: 12px; fill: var(--muted); }
+  .ring-name { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+  /* Skill badges */
+  .skill-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
+  .skill-badge { display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .skill-badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .card-title { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .section-title { font-size: 20px; font-weight: 700; margin: 32px 0 16px; display: flex; align-items: center; gap: 10px; }
+  .section-title::before { content: ''; display: block; width: 4px; height: 20px; border-radius: 2px; background: var(--blue); }
+
+  /* Score table */
+  .score-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .score-table th { padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600;
+    border-bottom: 1px solid var(--border); }
+  .score-table td { padding: 10px 12px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  .score-table tr:last-child td { border-bottom: none; }
+  .score-bar-wrap { display: flex; align-items: center; gap: 10px; }
+  .score-bar { height: 6px; border-radius: 3px; flex: 1; background: var(--surface2); }
+  .score-bar-fill { height: 100%; border-radius: 3px; }
+  .score-num { font-weight: 700; min-width: 30px; text-align: right; }
+  .delta { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+  .delta-up { background: rgba(63,185,80,0.15); color: var(--green); }
+  .delta-zero { background: rgba(139,148,158,0.15); color: var(--muted); }
+
+  /* Bug cards */
+  .bug-grid { display: grid; gap: 12px; }
+  .bug-card { background: var(--surface2); border-radius: 8px; padding: 16px; border-left: 3px solid; }
+  .bug-card.p0 { border-color: var(--red); }
+  .bug-card.p1 { border-color: var(--orange); }
+  .bug-card.p2 { border-color: var(--yellow); }
+  .bug-card.p3 { border-color: var(--muted); }
+  .bug-card.fixed { border-color: var(--green); opacity: 0.75; }
+  .bug-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-bottom: 8px; }
+  .tag-p0 { background: rgba(248,81,73,0.2); color: var(--red); }
+  .tag-p1 { background: rgba(255,166,87,0.2); color: var(--orange); }
+  .tag-p2 { background: rgba(210,153,34,0.2); color: var(--yellow); }
+  .tag-p3 { background: rgba(139,148,158,0.2); color: var(--muted); }
+  .tag-fixed { background: rgba(63,185,80,0.2); color: var(--green); }
+  .bug-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .bug-loc { font-size: 12px; color: var(--blue); font-family: monospace; margin-bottom: 6px; }
+  .bug-desc { font-size: 12px; color: var(--muted); }
+
+  /* Code block */
+  .code-block { background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px;
+    line-height: 1.7; overflow-x: auto; margin-top: 10px; }
+  .code-comment { color: #6e7681; }
+  .code-keyword { color: var(--purple); }
+  .code-string { color: var(--teal); }
+  .code-func { color: var(--yellow); }
+  .code-class { color: var(--orange); }
+  .code-good { color: var(--green); }
+  .code-bad { color: var(--red); }
+
+  /* Priority table */
+  .action-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .action-table th { padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600;
+    border-bottom: 1px solid var(--border); background: var(--surface2); }
+  .action-table td { padding: 10px 12px; border-bottom: 1px solid rgba(48,54,61,0.4); vertical-align: top; }
+  .action-table tr:hover td { background: rgba(88,166,255,0.04); }
+  .prio { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+
+  /* Smell list */
+  .smell-item { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .smell-item:last-child { border-bottom: none; }
+  .smell-icon { font-size: 18px; flex-shrink: 0; width: 28px; text-align: center; margin-top: 2px; }
+  .smell-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .smell-desc { font-size: 12px; color: var(--muted); }
+
+  /* Footer */
+  .footer { text-align: center; padding: 40px 0 20px; color: var(--muted); font-size: 12px; }
+
+  /* Responsive */
+  @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .score-ring-wrap { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-tag">⚡ 四合一深度扫描</div>
+    <h1>AI-auto-ppt 全维度代码评估报告 <span style="color:var(--blue)">v4.0</span></h1>
+    <p style="color:var(--muted);margin-top:8px;">using-superpowers · pydantic · python-performance-optimization · code-refactoring 协同扫描</p>
+    <div class="hero-meta">
+      <span>📅 2026-04-14</span>
+      <span>📁 ~200 Python 文件</span>
+      <span>🧪 60+ 测试文件</span>
+      <span>🏗️ 5 层架构</span>
+    </div>
+  </div>
+
+  <!-- Skill Row -->
+  <div class="skill-row">
+    <div class="skill-badge"><span class="dot" style="background:var(--blue)"></span>using-superpowers — 全维度框架</div>
+    <div class="skill-badge"><span class="dot" style="background:var(--orange)"></span>pydantic — v2 数据契约</div>
+    <div class="skill-badge"><span class="dot" style="background:var(--green)"></span>python-performance — 性能分析</div>
+    <div class="skill-badge"><span class="dot" style="background:var(--purple)"></span>code-refactoring — 代码异味</div>
+  </div>
+
+  <!-- Score Rings -->
+  <div class="score-ring-wrap">
+    <!-- Main score -->
+    <div class="ring-item">
+      <svg class="ring-svg" viewBox="0 0 120 120">
+        <circle class="ring-bg" cx="60" cy="60" r="50"/>
+        <circle class="ring-fg" cx="60" cy="60" r="50" stroke="#58a6ff"
+          stroke-dasharray="314" stroke-dashoffset="53.4"/>
+        <text class="ring-text" x="60" y="56" text-anchor="middle" font-size="26">83</text>
+        <text class="ring-label" x="60" y="74" text-anchor="middle" font-size="12">/ 100</text>
+      </svg>
+      <div class="ring-name" style="color:var(--blue);font-size:15px">综合评分</div>
+    </div>
+    <!-- Sub scores -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px">
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#3fb950" stroke-dasharray="201" stroke-dashoffset="36.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">84</text>
+        </svg>
+        <div class="ring-name">架构</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#d29922" stroke-dasharray="201" stroke-dashoffset="44.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">78</text>
+        </svg>
+        <div class="ring-name">Bug控制</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#3fb950" stroke-dasharray="201" stroke-dashoffset="36.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">82</text>
+        </svg>
+        <div class="ring-name">代码优雅</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#3fb950" stroke-dasharray="201" stroke-dashoffset="40.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">80</text>
+        </svg>
+        <div class="ring-name">测试覆盖</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#39d353" stroke-dasharray="201" stroke-dashoffset="26.1"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">87</text>
+        </svg>
+        <div class="ring-name">运行效率</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#d29922" stroke-dasharray="201" stroke-dashoffset="44.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">78</text>
+        </svg>
+        <div class="ring-name">兼容性</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#39d353" stroke-dasharray="201" stroke-dashoffset="20.1"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">90</text>
+        </svg>
+        <div class="ring-name">安全</div>
+      </div>
+      <div class="ring-item">
+        <svg class="ring-svg" viewBox="0 0 80 80" style="width:80px;height:80px">
+          <circle class="ring-bg" cx="40" cy="40" r="32"/>
+          <circle class="ring-fg" cx="40" cy="40" r="32" stroke="#d29922" stroke-dasharray="201" stroke-dashoffset="44.2"/>
+          <text x="40" y="44" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">78</text>
+        </svg>
+        <div class="ring-name">依赖健康</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Score Table -->
+  <div class="section-title">📊 维度评分趋势</div>
+  <div class="card" style="margin-bottom:32px">
+    <table class="score-table">
+      <thead><tr><th>维度</th><th>v3.0</th><th>v4.0</th><th>变化</th><th>评分条</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>🏗️ 架构设计</td><td style="color:var(--muted)">82</td>
+          <td><b style="color:var(--green)">84</b></td>
+          <td><span class="delta delta-up">+2</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:84%;background:var(--green)"></div></div><span class="score-num">84</span></div></td>
+        </tr>
+        <tr>
+          <td>🐛 Bug 控制</td><td style="color:var(--muted)">78</td>
+          <td><b style="color:var(--yellow)">78</b></td>
+          <td><span class="delta delta-zero">±0</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:78%;background:var(--yellow)"></div></div><span class="score-num">78</span></div></td>
+        </tr>
+        <tr>
+          <td>✨ 代码优雅</td><td style="color:var(--muted)">80</td>
+          <td><b style="color:var(--green)">82</b></td>
+          <td><span class="delta delta-up">+2</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:82%;background:var(--green)"></div></div><span class="score-num">82</span></div></td>
+        </tr>
+        <tr>
+          <td>🧪 测试覆盖</td><td style="color:var(--muted)">78</td>
+          <td><b style="color:var(--green)">80</b></td>
+          <td><span class="delta delta-up">+2</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:80%;background:var(--green)"></div></div><span class="score-num">80</span></div></td>
+        </tr>
+        <tr>
+          <td>⚡ 运行效率</td><td style="color:var(--muted)">85</td>
+          <td><b style="color:var(--teal)">87</b></td>
+          <td><span class="delta delta-up">+2</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:87%;background:var(--teal)"></div></div><span class="score-num">87</span></div></td>
+        </tr>
+        <tr>
+          <td>🔧 兼容性</td><td style="color:var(--muted)">75</td>
+          <td><b style="color:var(--yellow)">78</b></td>
+          <td><span class="delta delta-up">+3</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:78%;background:var(--yellow)"></div></div><span class="score-num">78</span></div></td>
+        </tr>
+        <tr>
+          <td>🔒 安全审计</td><td style="color:var(--muted)">90</td>
+          <td><b style="color:var(--teal)">90</b></td>
+          <td><span class="delta delta-zero">±0</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:90%;background:var(--teal)"></div></div><span class="score-num">90</span></div></td>
+        </tr>
+        <tr>
+          <td>📦 依赖健康</td><td style="color:var(--muted)">75</td>
+          <td><b style="color:var(--yellow)">78</b></td>
+          <td><span class="delta delta-up">+3</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:78%;background:var(--yellow)"></div></div><span class="score-num">78</span></div></td>
+        </tr>
+        <tr style="border-top:2px solid var(--border)">
+          <td><b>🎯 综合评分</b></td><td style="color:var(--muted)">80</td>
+          <td><b style="color:var(--blue);font-size:16px">83</b></td>
+          <td><span class="delta delta-up">+3</span></td>
+          <td><div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:83%;background:var(--blue)"></div></div><span class="score-num" style="color:var(--blue)">83</span></div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pydantic Section -->
+  <div class="section-title">🔶 Pydantic v2 深度分析</div>
+  <div class="grid-2" style="margin-bottom:24px">
+    <div class="card">
+      <div class="card-title" style="color:var(--green)">✅ 优秀实践</div>
+      <ul style="list-style:none;display:flex;flex-direction:column;gap:10px">
+        <li style="display:flex;gap:10px"><span style="color:var(--green)">●</span><span>Pydantic v2 全面采用，Rust 核心加速 5-50x</span></li>
+        <li style="display:flex;gap:10px"><span style="color:var(--green)">●</span><span>完整迁移 v2 API：<code style="color:var(--blue)">model_dump()</code> / <code style="color:var(--blue)">model_validate()</code></span></li>
+        <li style="display:flex;gap:10px"><span style="color:var(--green)">●</span><span><code style="color:var(--blue)">field_validator + @classmethod</code> 规范写法</span></li>
+        <li style="display:flex;gap:10px"><span style="color:var(--green)">●</span><span>Annotated + Field 约束完整，边界清晰</span></li>
+        <li style="display:flex;gap:10px"><span style="color:var(--green)">●</span><span><code style="color:var(--blue)">model_validator(mode="after")</code> 跨字段校验正确</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--orange)">⚠️ 改进项</div>
+      <div class="bug-grid">
+        <div class="bug-card p1">
+          <span class="bug-tag tag-p1">P1</span>
+          <div class="bug-title">requirements.txt 仍含 pytest</div>
+          <div class="bug-loc">requirements.txt:8</div>
+          <div class="bug-desc">pytest 应仅在 pyproject.toml [dev] 中，双重来源易混乱</div>
+        </div>
+        <div class="bug-card p2">
+          <span class="bug-tag tag-p2">P2</span>
+          <div class="bug-title">_strip_text 跨 4 模块重复定义</div>
+          <div class="bug-loc">schema.py / compiler.py / router.py / theme_loader.py</div>
+          <div class="bug-desc">建议抽取到 v2/utils.py 公共工具层</div>
+        </div>
+        <div class="bug-card p2">
+          <span class="bug-tag tag-p2">P2</span>
+          <div class="bug-title">缺少统一 AutoPPTBase ConfigDict</div>
+          <div class="bug-loc">多个 BaseModel 子类</div>
+          <div class="bug-desc">建议引入基类统一 str_strip_whitespace=True</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Code fix example -->
+  <div class="card" style="margin-bottom:32px">
+    <div class="card-title">💡 推荐修复：抽取公共 utils.py</div>
+    <div class="code-block">
+<span class="code-comment"># 建议新建：tools/sie_autoppt/v2/utils.py</span>
+<span class="code-keyword">from</span> typing <span class="code-keyword">import</span> Any
+
+<span class="code-keyword">def</span> <span class="code-func">strip_text</span>(value: Any) -> str:
+    <span class="code-string">"""通用文本清洗：None 安全、去首尾空格。"""</span>
+    <span class="code-keyword">if</span> value <span class="code-keyword">is</span> None:
+        <span class="code-keyword">return</span> <span class="code-string">""</span>
+    <span class="code-keyword">return</span> str(value).strip()
+
+<span class="code-comment"># 推荐基类：</span>
+<span class="code-keyword">class</span> <span class="code-class">AutoPPTBase</span>(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=<span class="code-good">True</span>,
+        validate_assignment=<span class="code-bad">False</span>,
+        extra=<span class="code-string">"ignore"</span>,
+    )
+    </div>
+  </div>
+
+  <!-- Performance Section -->
+  <div class="section-title">⚡ 性能分析</div>
+  <div class="grid-2" style="margin-bottom:24px">
+    <div class="card">
+      <div class="card-title" style="color:var(--green)">✅ 缓存策略（7 处 lru_cache）</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <tr style="color:var(--muted)"><th style="padding:6px 0;text-align:left">文件</th><th style="padding:6px 0;text-align:right">maxsize</th></tr>
+        <tr><td style="padding:5px 0;border-bottom:1px solid var(--border)"><code>visual_rule_config.py:101</code></td><td style="text-align:right"><span style="color:var(--green)">1</span></td></tr>
+        <tr><td style="padding:5px 0;border-bottom:1px solid var(--border)"><code>v2/rule_config.py:63</code></td><td style="text-align:right"><span style="color:var(--green)">1</span></td></tr>
+        <tr><td style="padding:5px 0;border-bottom:1px solid var(--border)"><code>template_manifest.py:314</code></td><td style="text-align:right"><span style="color:var(--yellow)">None</span></td></tr>
+        <tr><td style="padding:5px 0;border-bottom:1px solid var(--border)"><code>llm_openai.py:72</code></td><td style="text-align:right"><span style="color:var(--green)">1</span></td></tr>
+        <tr><td style="padding:5px 0"><code>planning/deck_planner.py:62</code></td><td style="text-align:right"><span style="color:var(--green)">1</span></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:var(--orange)">⚠️ 性能改进项</div>
+      <div class="bug-grid">
+        <div class="bug-card p1">
+          <span class="bug-tag tag-p1">P1 高影响</span>
+          <div class="bug-title">无 async/await，LLM 调用同步阻塞</div>
+          <div class="bug-loc">llm_openai.py + v2/services.py</div>
+          <div class="bug-desc">10+ 页 PPT 时 API 顺序等待，引入 AsyncOpenAI 可并发</div>
+        </div>
+        <div class="bug-card p2">
+          <span class="bug-tag tag-p2">P2</span>
+          <div class="bug-title">cards_grid_positions 无缓存</div>
+          <div class="bug-loc">layout_constants.py:185</div>
+          <div class="bug-desc">改为 tuple 返回并加 @lru_cache，15 分钟搞定</div>
+        </div>
+        <div class="bug-card p2">
+          <span class="bug-tag tag-p2">P2</span>
+          <div class="bug-title">two_columns.py:64 magic offset 0.22</div>
+          <div class="bug-loc">renderers/two_columns.py:64</div>
+          <div class="bug-desc">提取为 TWO_COLUMNS.inner_card_text_padding 命名常量</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Code fix async -->
+  <div class="card" style="margin-bottom:32px">
+    <div class="card-title">💡 推荐修复：引入 asyncio 并发 LLM 调用</div>
+    <div class="code-block">
+<span class="code-comment"># 当前：同步顺序，10 页 × 3秒 = 30 秒</span>
+<span class="code-keyword">for</span> slide <span class="code-keyword">in</span> slides:
+    result = call_llm(prompt)  <span class="code-comment"># 阻塞等待</span>
+
+<span class="code-comment"># 建议：asyncio 并发，理论 ~3 秒完成所有页</span>
+<span class="code-keyword">import</span> asyncio
+<span class="code-keyword">from</span> openai <span class="code-keyword">import</span> AsyncOpenAI
+
+<span class="code-keyword">async def</span> <span class="code-func">call_llm_async</span>(prompt: str) -> str:
+    client = AsyncOpenAI()
+    resp = <span class="code-keyword">await</span> client.chat.completions.create(...)
+    <span class="code-keyword">return</span> resp.choices[0].message.content
+
+results = <span class="code-keyword">await</span> asyncio.gather(*[call_llm_async(p) <span class="code-keyword">for</span> p <span class="code-keyword">in</span> prompts])
+    </div>
+  </div>
+
+  <!-- Code Smells -->
+  <div class="section-title">🔍 代码异味识别</div>
+  <div class="card" style="margin-bottom:32px">
+    <div class="smell-item">
+      <div class="smell-icon">🔁</div>
+      <div>
+        <div class="smell-title">Smell-1：_strip_text 4 处重复定义 <span class="bug-tag tag-p1" style="font-size:10px">高</span></div>
+        <div class="smell-desc">schema.py · semantic_compiler.py · semantic_router.py · theme_loader.py — 违反 DRY，建议统一到 v2/utils.py</div>
+      </div>
+    </div>
+    <div class="smell-item">
+      <div class="smell-icon">🔁</div>
+      <div>
+        <div class="smell-title">Smell-2：_normalize_data_sources 双份实现 <span class="bug-tag tag-p1" style="font-size:10px">高</span></div>
+        <div class="smell-desc">schema.py:31 与 semantic_compiler.py:78 逻辑完全相同，30 分钟可合并</div>
+      </div>
+    </div>
+    <div class="smell-item">
+      <div class="smell-icon">⚠️</div>
+      <div>
+        <div class="smell-title">Smell-3：presentation_ops.py 吞异常 <span class="bug-tag tag-p2" style="font-size:10px">中</span></div>
+        <div class="smell-desc"><code>except Exception: pass</code> 掩盖关系链失败，建议改为 <code>log.warning()</code></div>
+      </div>
+    </div>
+    <div class="smell-item">
+      <div class="smell-icon">📦</div>
+      <div>
+        <div class="smell-title">Smell-4：渲染函数 6 参数爆炸 <span class="bug-tag tag-p2" style="font-size:10px">中</span></div>
+        <div class="smell-desc">所有 render_* 函数共享相同 6 个参数签名，建议引入 RenderContext 参数对象</div>
+      </div>
+    </div>
+    <div class="smell-item">
+      <div class="smell-icon">🔀</div>
+      <div>
+        <div class="smell-title">Smell-5：models.py TypedDict vs v2/schema.py Pydantic 双轨 <span class="bug-tag tag-p2" style="font-size:10px">中</span></div>
+        <div class="smell-desc">TypedDict 无运行时验证，长期建议逐步迁移到 Pydantic</div>
+      </div>
+    </div>
+    <div class="smell-item">
+      <div class="smell-icon">🧪</div>
+      <div>
+        <div class="smell-title">Smell-6：缺少 property-based 模糊测试 <span class="bug-tag tag-p3" style="font-size:10px">低</span></div>
+        <div class="smell-desc">建议引入 hypothesis 对 Pydantic schema 做边界模糊测试</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RenderContext example -->
+  <div class="card" style="margin-bottom:32px">
+    <div class="card-title">💡 推荐重构：RenderContext 消除参数爆炸</div>
+    <div class="code-block">
+<span class="code-comment"># 当前：每个渲染函数重复 6 参数</span>
+<span class="code-keyword">def</span> <span class="code-func">render_stats_dashboard</span>(prs, slide_data, theme, log, slide_number, total_slides):
+    ...
+
+<span class="code-comment"># 建议：参数对象封装</span>
+<span class="code-keyword">from</span> dataclasses <span class="code-keyword">import</span> dataclass
+
+@dataclass
+<span class="code-keyword">class</span> <span class="code-class">RenderContext</span>:
+    prs: Any
+    theme: ThemeSpec
+    log: Any
+    slide_number: int
+    total_slides: int
+
+<span class="code-keyword">def</span> <span class="code-func">render_stats_dashboard</span>(ctx: <span class="code-class">RenderContext</span>, slide_data: StatsDashboardSlide):
+    slide = add_blank_slide(ctx.prs)
+    fill_background(slide, ctx.theme)
+    ...
+    </div>
+  </div>
+
+  <!-- Bug Status -->
+  <div class="section-title">🐛 Bug 全状态追踪</div>
+  <div class="bug-grid" style="margin-bottom:32px">
+    <div class="bug-card fixed">
+      <span class="bug-tag tag-fixed">✅ 已修复</span>
+      <div class="bug-title">stats_dashboard 国际化</div>
+      <div class="bug-loc">stats_dashboard.py:27</div>
+      <div class="bug-desc">CJK 字符探测，自动切换"关键洞察"/"Key Insights"，逻辑完美</div>
+    </div>
+    <div class="bug-card p1">
+      <span class="bug-tag tag-p1">P1 待修复</span>
+      <div class="bug-title">requirements.txt 残留 pytest</div>
+      <div class="bug-loc">requirements.txt:8</div>
+      <div class="bug-desc">v3 报告标记已修，但当前代码仍存在。5 分钟可清理。</div>
+    </div>
+    <div class="bug-card p1">
+      <span class="bug-tag tag-p1">P1 待修复</span>
+      <div class="bug-title">layout_constants.py 无单位注释</div>
+      <div class="bug-loc">layout_constants.py 全文</div>
+      <div class="bug-desc">坐标单位为英寸，无注释说明。新贡献者易误解为 EMU 或厘米。</div>
+    </div>
+    <div class="bug-card p1">
+      <span class="bug-tag tag-p1">P1 待修复</span>
+      <div class="bug-title">mypy 覆盖范围过窄</div>
+      <div class="bug-loc">pyproject.toml:101-104</div>
+      <div class="bug-desc">仅 3 个文件纳入类型检查，v2/schema.py 等核心模块未覆盖。</div>
+    </div>
+    <div class="bug-card p2">
+      <span class="bug-tag tag-p2">P2</span>
+      <div class="bug-title">presentation_ops 吞异常</div>
+      <div class="bug-loc">legacy/presentation_ops.py:23</div>
+      <div class="bug-desc">except Exception: pass 掩盖关系链复制失败，影响调试。</div>
+    </div>
+  </div>
+
+  <!-- Architecture -->
+  <div class="section-title">🏗️ 架构评估</div>
+  <div class="card" style="margin-bottom:32px">
+    <div class="card-title">五层架构流向</div>
+    <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;margin:16px 0">
+      <div style="text-align:center;padding:12px 20px;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;min-width:140px">
+        <div style="font-size:11px;color:var(--blue);font-weight:600;margin-bottom:4px">AI 层</div>
+        <div style="font-size:13px;font-weight:700">SemanticDeck</div>
+        <div style="font-size:11px;color:var(--muted)">JSON 语义内容</div>
+      </div>
+      <div style="font-size:20px;color:var(--muted);padding:0 8px">→</div>
+      <div style="text-align:center;padding:12px 20px;background:rgba(163,113,247,0.1);border:1px solid rgba(163,113,247,0.3);border-radius:8px;min-width:140px">
+        <div style="font-size:11px;color:var(--purple);font-weight:600;margin-bottom:4px">编译层</div>
+        <div style="font-size:13px;font-weight:700">semantic_compiler</div>
+        <div style="font-size:11px;color:var(--muted)">normalize + validate</div>
+      </div>
+      <div style="font-size:20px;color:var(--muted);padding:0 8px">→</div>
+      <div style="text-align:center;padding:12px 20px;background:rgba(255,166,87,0.1);border:1px solid rgba(255,166,87,0.3);border-radius:8px;min-width:140px">
+        <div style="font-size:11px;color:var(--orange);font-weight:600;margin-bottom:4px">契约层</div>
+        <div style="font-size:13px;font-weight:700">schema.py</div>
+        <div style="font-size:11px;color:var(--muted)">Pydantic v2</div>
+      </div>
+      <div style="font-size:20px;color:var(--muted);padding:0 8px">→</div>
+      <div style="text-align:center;padding:12px 20px;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);border-radius:8px;min-width:140px">
+        <div style="font-size:11px;color:var(--green);font-weight:600;margin-bottom:4px">调度层</div>
+        <div style="font-size:13px;font-weight:700">deck_director</div>
+        <div style="font-size:11px;color:var(--muted)">渲染调度</div>
+      </div>
+      <div style="font-size:20px;color:var(--muted);padding:0 8px">→</div>
+      <div style="text-align:center;padding:12px 20px;background:rgba(57,211,83,0.1);border:1px solid rgba(57,211,83,0.3);border-radius:8px;min-width:140px">
+        <div style="font-size:11px;color:var(--teal);font-weight:600;margin-bottom:4px">渲染层</div>
+        <div style="font-size:13px;font-weight:700">renderers/*.py</div>
+        <div style="font-size:11px;color:var(--muted)">确定性 PPTX</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div>
+        <div style="color:var(--green);font-weight:600;margin-bottom:8px">✅ 架构亮点</div>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13px">
+          <li>• AI 内容 / 布局决策 / 渲染层三者分离</li>
+          <li>• Pydantic v2 作为强类型数据契约层</li>
+          <li>• frozen dataclass 坐标常量防运行时篡改</li>
+          <li>• 规则质量门 (TOML) + AI 视觉复核双保障</li>
+        </ul>
+      </div>
+      <div>
+        <div style="color:var(--orange);font-weight:600;margin-bottom:8px">⚠️ 架构建议</div>
+        <ul style="list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13px">
+          <li>• 引入 v2/utils.py 公共工具层</li>
+          <li>• 引入 RenderContext 统一渲染参数</li>
+          <li>• 考虑 asyncio 并发化 LLM 调用链</li>
+          <li>• mypy 覆盖扩展到整个 v2/ 目录</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action List -->
+  <div class="section-title">🎯 行动清单</div>
+  <div class="card">
+    <div class="card-title" style="color:var(--red)">🔴 今天处理（&lt; 1 小时）</div>
+    <table class="action-table" style="margin-bottom:20px">
+      <thead><tr><th>#</th><th>问题</th><th>位置</th><th>工时</th></tr></thead>
+      <tbody>
+        <tr><td><span class="prio" style="background:rgba(248,81,73,0.15);color:var(--red)">P1</span></td><td>删除 requirements.txt 中 pytest</td><td><code>requirements.txt:8</code></td><td>5min</td></tr>
+        <tr><td><span class="prio" style="background:rgba(248,81,73,0.15);color:var(--red)">P1</span></td><td>layout_constants 加单位注释</td><td><code>layout_constants.py</code></td><td>30min</td></tr>
+        <tr><td><span class="prio" style="background:rgba(248,81,73,0.15);color:var(--red)">P1</span></td><td>补全 presentation_ops 吞异常日志</td><td><code>legacy/presentation_ops.py:23</code></td><td>15min</td></tr>
+      </tbody>
+    </table>
+    <div class="card-title" style="color:var(--yellow)">🟡 本周处理（1-8 小时）</div>
+    <table class="action-table" style="margin-bottom:20px">
+      <thead><tr><th>#</th><th>问题</th><th>位置</th><th>工时</th></tr></thead>
+      <tbody>
+        <tr><td><span class="prio" style="background:rgba(210,153,34,0.15);color:var(--yellow)">P2</span></td><td>抽取 _strip_text 到 v2/utils.py</td><td>4 个模块</td><td>1h</td></tr>
+        <tr><td><span class="prio" style="background:rgba(210,153,34,0.15);color:var(--yellow)">P2</span></td><td>合并重复 _normalize_data_sources</td><td>schema.py + compiler.py</td><td>30min</td></tr>
+        <tr><td><span class="prio" style="background:rgba(210,153,34,0.15);color:var(--yellow)">P2</span></td><td>扩展 mypy 到 v2/ 目录</td><td>pyproject.toml</td><td>15min</td></tr>
+        <tr><td><span class="prio" style="background:rgba(210,153,34,0.15);color:var(--yellow)">P2</span></td><td>cards_grid_positions 加 @lru_cache</td><td>layout_constants.py:185</td><td>15min</td></tr>
+      </tbody>
+    </table>
+    <div class="card-title" style="color:var(--green)">🟢 下个迭代（长期优化）</div>
+    <table class="action-table">
+      <thead><tr><th>#</th><th>问题</th><th>位置</th><th>工时</th></tr></thead>
+      <tbody>
+        <tr><td><span class="prio" style="background:rgba(63,185,80,0.15);color:var(--green)">P3</span></td><td>引入 RenderContext 参数对象</td><td>所有 renderers</td><td>3h</td></tr>
+        <tr><td><span class="prio" style="background:rgba(63,185,80,0.15);color:var(--green)">P3</span></td><td>AutoPPTBase 统一 Pydantic ConfigDict</td><td>schema.py</td><td>1h</td></tr>
+        <tr><td><span class="prio" style="background:rgba(63,185,80,0.15);color:var(--green)">P3</span></td><td>引入 asyncio 并发 LLM 调用</td><td>llm_openai.py</td><td>8h</td></tr>
+        <tr><td><span class="prio" style="background:rgba(63,185,80,0.15);color:var(--green)">P3</span></td><td>引入 hypothesis 模糊测试</td><td>tests/</td><td>4h</td></tr>
+        <tr><td><span class="prio" style="background:rgba(63,185,80,0.15);color:var(--green)">P3</span></td><td>models.py TypedDict → Pydantic 迁移</td><td>models.py</td><td>8h</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    <p>AI-auto-ppt 全维度代码评估报告 v4.0 · 综合评分 <strong style="color:var(--blue)">83/100</strong> · 2026-04-14</p>
+    <p style="margin-top:8px">Skill 组合：using-superpowers + pydantic + python-performance-optimization + code-refactoring</p>
+  </div>
+
+</div>
+</body>
+</html>

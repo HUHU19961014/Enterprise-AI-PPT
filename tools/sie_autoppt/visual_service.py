@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import BodyPageSpec, DeckSpec
+from .models import BodyPageSpec, DeckSpec, validate_body_page_payload
 from .visual_html_renderer import render_visual_spec_to_html
 from .visual_rule_config import VisualRuleConfig, load_visual_rule_config_from_path
 from .visual_score import review_visual_draft_with_ai, score_visual_draft
@@ -49,10 +49,19 @@ def _join_payload_text(payload: dict[str, object]) -> str:
 def _choose_layout(page: BodyPageSpec, layout_hint: str) -> str:
     if layout_hint and layout_hint != "auto":
         return layout_hint
-    merged_text = " ".join([page.title, page.subtitle, *page.bullets, _join_payload_text(dict(page.payload))]).strip()
+    payload_obj = validate_body_page_payload(page.pattern_id, page.payload)
+    if hasattr(payload_obj, "model_dump"):
+        payload_dict = payload_obj.model_dump(mode="json")
+    else:
+        payload_dict = dict(payload_obj)
+    merged_text = " ".join([page.title, page.subtitle, *page.bullets, _join_payload_text(payload_dict)]).strip()
     if _contains_risk_language(merged_text):
         return "risk_to_value"
-    payload = dict(page.payload)
+    payload_obj = validate_body_page_payload(page.pattern_id, page.payload)
+    if hasattr(payload_obj, "model_dump"):
+        payload = payload_obj.model_dump(mode="json")
+    else:
+        payload = dict(payload_obj)
     if page.pattern_id in PROOF_PATTERN_IDS or any(key in payload for key in ("claims", "metrics", "left_cards", "right_cards")):
         return "sales_proof"
     return "executive_summary"
@@ -80,7 +89,11 @@ def build_visual_spec_from_deck_spec(deck_spec: DeckSpec, page_index: int = 0, l
     if page_index < 0 or page_index >= len(deck_spec.body_pages):
         raise ValueError(f"page_index {page_index} out of range for {len(deck_spec.body_pages)} pages")
     page = deck_spec.body_pages[page_index]
-    payload = dict(page.payload)
+    payload_obj = validate_body_page_payload(page.pattern_id, page.payload)
+    if hasattr(payload_obj, "model_dump"):
+        payload = payload_obj.model_dump(mode="json")
+    else:
+        payload = dict(payload_obj)
     layout_type = _choose_layout(page, layout_hint)
     components: list[VisualComponent] = [VisualComponent(type="headline", text=page.title)]
     subheadline_text = page.subtitle.strip() or str(payload.get("headline") or "").strip()

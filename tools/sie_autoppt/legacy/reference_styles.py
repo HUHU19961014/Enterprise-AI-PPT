@@ -1,14 +1,17 @@
 import re
 import unicodedata
+import zipfile
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 from xml.etree import ElementTree
-import zipfile
 
 from pptx import Presentation
 from pptx.enum.text import PP_ALIGN
 
 from ..config import COLOR_ACTIVE
+from ..models import validate_body_page_payload
 from ..template_manifest import TemplateManifest, load_template_manifest
 from ..text_ops import write_text
 
@@ -53,7 +56,7 @@ def get_reference_slide_no(style_id: str | None) -> int | None:
     style = REFERENCE_STYLE_LIBRARY.get(style_id)
     if not style:
         return None
-    return int(style["source_slide"])
+    return int(cast(int, style["source_slide"]))
 
 
 def _normalize_reference_text(text: str) -> str:
@@ -111,7 +114,8 @@ def locate_reference_slide_no(style_id: str | None, reference_body_path: Path | 
                 if metadata_name == metadata_target:
                     return index
         slide_texts = _slide_text_index(str(reference_body_path.resolve()))
-        for marker in style.get("match_any_text", []):
+        match_any_text = cast(list[Any], style.get("match_any_text", []))
+        for marker in match_any_text:
             normalized_marker = _normalize_reference_text(str(marker))
             for index, slide_text in enumerate(slide_texts, start=1):
                 if normalized_marker and normalized_marker in slide_text:
@@ -170,6 +174,12 @@ def _cards(payload, key: str, count: int) -> list[dict[str, str]]:
 
 
 def fill_reference_style_slide(slide, page) -> bool:
+    validated_payload = validate_body_page_payload(getattr(page, "pattern_id", ""), getattr(page, "payload", {}))
+    if hasattr(validated_payload, "model_dump"):
+        payload = validated_payload.model_dump(mode="json")
+    else:
+        payload = dict(validated_payload)
+    page = replace(page, payload=payload)
     style_id = getattr(page, "reference_style_id", None)
     if style_id == "comparison_upgrade":
         if not _has_shape_slots(slide, 61):

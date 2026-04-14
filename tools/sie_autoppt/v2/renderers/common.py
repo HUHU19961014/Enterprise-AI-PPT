@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import Any
 
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
@@ -9,6 +11,15 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
 from ..theme_loader import ThemeSpec
+
+
+@dataclass(frozen=True)
+class RenderContext:
+    prs: Any
+    theme: ThemeSpec
+    log: Any
+    slide_number: int
+    total_slides: int
 
 
 TIMELINE_PREFIX_PATTERN = re.compile(

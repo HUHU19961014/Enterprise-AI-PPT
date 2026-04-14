@@ -1,10 +1,10 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from tools.sie_autoppt.models import BodyPageSpec, DeckSpec
-from tools.sie_autoppt.visual_score import score_visual_draft
+from tools.sie_autoppt.visual_score import review_visual_drafts_with_ai_batch, score_visual_draft
 from tools.sie_autoppt.visual_spec import VisualComponent, VisualLayout, VisualSpec
 
 
@@ -296,6 +296,40 @@ class VisualScoreTests(unittest.TestCase):
                         with_ai_review=False,
                         visual_rules_path=str(rules_path),
                     )
+
+
+class VisualScoreAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_review_visual_drafts_with_ai_batch_returns_reviews(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            html_path = Path(temp_dir) / "slide.html"
+            html_path.write_text("<section class='slide'></section>", encoding="utf-8")
+            items = [(_good_spec(), html_path, None), (_good_spec(), html_path, None)]
+            payloads = [
+                {
+                    "score": 86,
+                    "decision": "pass",
+                    "summary": "Good",
+                    "strengths": ["clear"],
+                    "issues": [],
+                    "fixes": [],
+                },
+                {
+                    "score": 72,
+                    "decision": "revise",
+                    "summary": "Needs work",
+                    "strengths": [],
+                    "issues": ["dense"],
+                    "fixes": ["simplify"],
+                },
+            ]
+            with patch(
+                "tools.sie_autoppt.visual_score.OpenAIResponsesClient.acreate_structured_json_batch",
+                new=AsyncMock(return_value=payloads),
+            ):
+                reviews = await review_visual_drafts_with_ai_batch(items, model="test-model", concurrency=2)
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(reviews[0].decision, "pass")
+        self.assertEqual(reviews[1].decision, "revise")
 
 
 if __name__ == "__main__":

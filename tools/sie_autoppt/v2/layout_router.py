@@ -7,6 +7,7 @@ from pptx import Presentation
 from ..plugins import plugin_layout_renderers
 from .layout_ids import SUPPORTED_LAYOUTS
 from .renderers.cards_grid import render_cards_grid
+from .renderers.common import RenderContext
 from .renderers.matrix_grid import render_matrix_grid
 from .renderers.section_break import render_section_break
 from .renderers.stats_dashboard import render_stats_dashboard
@@ -19,7 +20,7 @@ from .schema import SlideModel
 from .theme_loader import ThemeSpec
 
 
-LayoutRenderer = Callable[..., object]
+LayoutRenderer = Callable[[RenderContext, SlideModel], object]
 
 LAYOUT_RENDERERS: dict[str, LayoutRenderer] = {
     "section_break": render_section_break,
@@ -64,4 +65,11 @@ def render_slide(
     renderer = active_renderers.get(layout)
     if renderer is None:
         raise ValueError(f"Unsupported layout: {layout}")
-    return renderer(prs, slide_data, theme, log, slide_number, total_slides)
+    ctx = RenderContext(
+        prs=prs,
+        theme=theme,
+        log=log,
+        slide_number=slide_number,
+        total_slides=total_slides,
+    )
+    return renderer(ctx, slide_data)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -26,15 +27,15 @@ from .io import (
     default_semantic_output_path,
     load_outline_document,
     write_deck_document,
-    write_semantic_document,
     write_outline_document,
+    write_semantic_document,
 )
 from .quality_checks import quality_gate, write_quality_gate_result
 from .schema import (
-    DeckDocument,
-    OutlineDocument,
     SUPPORTED_LAYOUTS,
     SUPPORTED_THEMES,
+    DeckDocument,
+    OutlineDocument,
     ValidatedDeck,
     collect_deck_warnings,
 )
@@ -190,8 +191,10 @@ def _collect_slide_text_lines(slide: Any) -> list[str]:
     elif layout == "title_image":
         lines.extend(getattr(slide, "content", []))
         image = getattr(slide, "image", None)
-        if image is not None and getattr(image, "caption", ""):
-            lines.append(str(image.caption))
+        if image is not None:
+            caption = getattr(image, "caption", None)
+            if isinstance(caption, str) and caption:
+                lines.append(caption)
     elif layout == "timeline":
         if getattr(slide, "heading", ""):
             lines.append(str(slide.heading))
@@ -765,6 +768,97 @@ def generate_semantic_deck_with_ai(
         except ValueError as exc:
             feedback = (str(exc),)
     raise ValueError("Deck generation failed validation after 3 attempts: " + "; ".join(feedback))
+
+
+async def generate_semantic_decks_with_ai_batch(
+    requests: list[DeckGenerationRequest],
+    *,
+    model: str | None = None,
+    concurrency: int = 4,
+) -> list[dict[str, Any]]:
+    if not requests:
+        return []
+    bounded = max(1, int(concurrency))
+    semaphore = asyncio.Semaphore(bounded)
+    results: list[dict[str, Any] | None] = [None] * len(requests)
+    normalized_requests: list[DeckGenerationRequest] = []
+    for request in requests:
+        if request.theme not in SUPPORTED_THEMES:
+            raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+        normalized_language = normalize_language_code(request.language)
+        generation_mode = normalize_generation_mode(request.generation_mode)
+        structured_context, strategic_analysis = ensure_generation_context(
+            topic=request.topic,
+            brief=request.brief,
+            audience=request.audience,
+            language=normalized_language,
+            generation_mode=generation_mode,
+            structured_context=request.structured_context,
+            strategic_analysis=request.strategic_analysis,
+            model=model,
+        )
+        normalized_requests.append(
+            DeckGenerationRequest(
+                topic=request.topic,
+                outline=request.outline,
+                brief=request.brief,
+                audience=request.audience,
+                language=normalized_language,
+                theme=request.theme,
+                author=request.author,
+                generation_mode=generation_mode,
+                structured_context=structured_context,
+                strategic_analysis=strategic_analysis,
+            )
+        )
+
+    client = _create_structured_client(model=model)
+    if hasattr(client, "acreate_structured_json_batch"):
+        batch_requests: list[dict[str, Any]] = []
+        for normalized in normalized_requests:
+            developer_prompt, user_prompt = build_deck_prompts(normalized)
+            batch_requests.append(
+                {
+                    "developer_prompt": developer_prompt,
+                    "user_items": [{"type": "text", "text": user_prompt}],
+                    "schema_name": "ppt_deck_v2",
+                    "schema": build_deck_schema(),
+                }
+            )
+        payloads = await client.acreate_structured_json_batch(batch_requests, concurrency=bounded)
+        for index, payload in enumerate(payloads):
+            normalized = normalized_requests[index]
+            compile_semantic_deck_payload(
+                payload,
+                default_title=normalized.topic,
+                default_theme=normalized.theme,
+                default_language=normalized.language,
+                default_author=normalized.author,
+            )
+            results[index] = payload
+        return [item for item in results if item is not None]
+
+    async def _run(index: int, normalized: DeckGenerationRequest) -> None:
+        developer_prompt, user_prompt = build_deck_prompts(normalized)
+        async with semaphore:
+            payload = await asyncio.to_thread(
+                client.create_structured_json,
+                developer_prompt=developer_prompt,
+                user_prompt=user_prompt,
+                schema_name="ppt_deck_v2",
+                schema=build_deck_schema(),
+            )
+        compile_semantic_deck_payload(
+            payload,
+            default_title=normalized.topic,
+            default_theme=normalized.theme,
+            default_language=normalized.language,
+            default_author=normalized.author,
+        )
+        results[index] = payload
+
+    await asyncio.gather(*(_run(index, normalized) for index, normalized in enumerate(normalized_requests)))
+    return [item for item in results if item is not None]
 
 
 def make_v2_ppt(

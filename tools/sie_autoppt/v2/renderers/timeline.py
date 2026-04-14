@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from ..schema import TimelineSlide
-from ..theme_loader import ThemeSpec
-from .common import add_blank_slide, add_card, add_page_number, add_textbox, add_timeline_flow, fill_background
+from .common import RenderContext, add_blank_slide, add_card, add_page_number, add_textbox, add_timeline_flow, fill_background
 from .layout_constants import TIMELINE, TITLE_BAND
 
 
-def render_timeline(prs, slide_data: TimelineSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_timeline(ctx: RenderContext, slide_data: TimelineSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(

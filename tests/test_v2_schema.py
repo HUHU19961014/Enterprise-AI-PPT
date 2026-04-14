@@ -12,10 +12,17 @@ from tools.sie_autoppt.v2.schema import (
     OutlineDocument,
     SUPPORTED_LAYOUTS,
     SUPPORTED_THEMES,
+    ThemeMeta,
     collect_deck_warnings,
     validate_deck_payload,
 )
 from tools.sie_autoppt.v2.io import is_semantic_deck_document, load_deck_document, load_outline_document
+
+try:
+    from hypothesis import given, strategies as st
+except ImportError:  # pragma: no cover
+    given = None
+    st = None
 
 
 @contextmanager
@@ -141,6 +148,55 @@ class V2SchemaTests(unittest.TestCase):
         self.assertEqual(validated.deck.slides[2].layout, "matrix_grid")
         self.assertEqual(validated.deck.slides[3].layout, "cards_grid")
 
+    def test_validate_deck_payload_strips_nested_optional_fields(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_image",
+                        "title": "Architecture",
+                        "anti_argument": "   ",
+                        "content": ["  Point A  ", " Point B "],
+                        "image": {"mode": "placeholder", "caption": "  Diagram  ", "path": "   "},
+                    }
+                ],
+            }
+        )
+
+        slide = validated.deck.slides[0]
+        self.assertIsNone(slide.anti_argument)
+        self.assertEqual(slide.content, ["Point A", "Point B"])
+        self.assertEqual(slide.image.caption, "Diagram")
+        self.assertIsNone(slide.image.path)
+
+    def test_validate_deck_payload_strips_stats_dashboard_heading_and_note(self):
+        validated = validate_deck_payload(
+            {
+                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "stats_dashboard",
+                        "title": "Metrics",
+                        "heading": "  Weekly KPI  ",
+                        "metrics": [
+                            {"label": " OTD ", "value": " 95% ", "note": "  Stable  "},
+                            {"label": " Yield ", "value": " 98% ", "note": "   "},
+                        ],
+                    }
+                ],
+            }
+        )
+
+        slide = validated.deck.slides[0]
+        self.assertEqual(slide.heading, "Weekly KPI")
+        self.assertEqual(slide.metrics[0].label, "OTD")
+        self.assertEqual(slide.metrics[0].value, "95%")
+        self.assertEqual(slide.metrics[0].note, "Stable")
+        self.assertIsNone(slide.metrics[1].note)
+
     def test_load_deck_document_accepts_semantic_deck_json(self):
         semantic_payload = {
             "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
@@ -205,3 +261,21 @@ class V2SchemaTests(unittest.TestCase):
 
         self.assertEqual(outline.pages[0].title, "Context")
         self.assertEqual(deck.slides[0].layout, "title_only")
+
+    @unittest.skipIf(given is None or st is None, "hypothesis is not installed")
+    def test_theme_meta_title_property(self):
+        @given(st.text(min_size=1, max_size=80))
+        def _property(title: str):
+            meta = ThemeMeta.model_validate(
+                {
+                    "title": title,
+                    "theme": "business_red",
+                    "language": "zh-CN",
+                    "author": "AI",
+                    "version": "2.0",
+                }
+            )
+            self.assertGreaterEqual(len(meta.title), 1)
+            self.assertLessEqual(len(meta.title), 80)
+
+        _property()

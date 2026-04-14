@@ -7,12 +7,13 @@ New layout work should prefer the V2 semantic renderers under tools/sie_autoppt/
 
 import re
 import textwrap
+from dataclasses import replace
 
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 
 from ..config import COLOR_ACTIVE, COLOR_INACTIVE
-from ..models import BodyPageSpec
+from ..models import BodyPageSpec, validate_body_page_payload
 from ..style_guide import deep_merge_dict
 from ..template_manifest import TemplateManifest
 from ..text_ops import add_textbox, write_text
@@ -212,6 +213,13 @@ def apply_theme_title(prs, title: str, manifest: TemplateManifest):
 
 
 def fill_body_slide(slide, page: BodyPageSpec, manifest: TemplateManifest):
+    validated_payload = validate_body_page_payload(page.pattern_id, page.payload)
+    if hasattr(validated_payload, "model_dump"):
+        effective_payload = validated_payload.model_dump(mode="json")
+    else:
+        effective_payload = validated_payload
+    page = replace(page, payload=effective_payload)
+
     texts = sorted(pick_text_shapes(slide), key=lambda shape: (shape.top, shape.left))
     title_candidates = [shape for shape in texts if manifest.selectors.body_title.matches(shape)]
     if title_candidates:

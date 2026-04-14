@@ -6,10 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-
-def _strip_text(value: object) -> str:
-    return str(value).strip()
-
+from .utils import strip_text
 
 class ThemePage(BaseModel):
     width: float = Field(gt=0)
@@ -28,7 +25,7 @@ class ThemeColors(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
     def _normalize_color(cls, value: object) -> str:
-        text = _strip_text(value)
+        text = strip_text(value)
         normalized = text[1:] if text.startswith("#") else text
         if not re.fullmatch(r"[0-9A-Fa-f]{6}", normalized):
             raise ValueError("theme color values must be in RRGGBB or #RRGGBB format.")
@@ -43,7 +40,7 @@ class ThemeFonts(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
     def _normalize_font(cls, value: object) -> str:
-        return _strip_text(value)
+        return strip_text(value)
 
 
 class ThemeFontSizes(BaseModel):
@@ -61,6 +58,17 @@ class ThemeSpacing(BaseModel):
     block_gap: float = Field(ge=0)
 
 
+class ThemeCardLayout(BaseModel):
+    left: float = Field(ge=0)
+    top: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+
+
+class ThemeLayouts(BaseModel):
+    matrix_outer_card: ThemeCardLayout | None = None
+
+
 class ThemeSpec(BaseModel):
     theme_name: str
     page: ThemePage
@@ -68,11 +76,12 @@ class ThemeSpec(BaseModel):
     fonts: ThemeFonts
     font_sizes: ThemeFontSizes
     spacing: ThemeSpacing
+    layouts: ThemeLayouts = Field(default_factory=ThemeLayouts)
 
     @field_validator("theme_name", mode="before")
     @classmethod
     def _normalize_theme_name(cls, value: object) -> str:
-        return _strip_text(value)
+        return strip_text(value)
 
 
 THEMES_DIR = Path(__file__).resolve().parent / "themes"

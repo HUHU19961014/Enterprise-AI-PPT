@@ -3,12 +3,15 @@ from __future__ import annotations
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 
 from ..schema import TitleOnlySlide
-from ..theme_loader import ThemeSpec
-from .common import add_blank_slide, add_card, add_page_number, add_textbox, fill_background
+from .common import RenderContext, add_blank_slide, add_card, add_page_number, add_textbox, fill_background
 from .layout_constants import TITLE_ONLY
 
 
-def render_title_only(prs, slide_data: TitleOnlySlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_title_only(ctx: RenderContext, slide_data: TitleOnlySlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_card(

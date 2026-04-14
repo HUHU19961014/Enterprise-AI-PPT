@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import lru_cache
 
+from ..theme_loader import ThemeSpec
+
+# All geometry values in this module use inches for 16:9 slides (13.33 x 7.5 in).
 
 @dataclass(frozen=True)
 class TitleBandLayout:
@@ -30,6 +34,7 @@ class TwoColumnLayout:
     left_left: float = 0.78
     right_left: float = 7.05
     inner_horizontal_padding: float = 0.18
+    inner_card_text_padding: float = 0.22
     heading_top_offset: float = 0.18
     heading_height: float = 0.38
     bullet_top_offset: float = 0.62
@@ -180,12 +185,28 @@ STATS_DASHBOARD = StatsDashboardLayout()
 SECTION_BREAK = SectionBreakLayout()
 
 
-def cards_grid_positions(card_count: int) -> list[tuple[float, float, float, float]]:
+@lru_cache(maxsize=8)
+def cards_grid_positions(card_count: int) -> tuple[tuple[float, float, float, float], ...]:
     if card_count == 2:
-        return [
+        return (
             (0.9, 1.5, TWO_COLUMNS.card_width, 4.55),
             (6.05, 1.5, TWO_COLUMNS.card_width, 4.55),
-        ]
+        )
     if card_count == 3:
-        return [(0.85, 1.64, 3.72, 4.2), (4.79, 1.64, 3.72, 4.2), (8.73, 1.64, 3.72, 4.2)]
-    return [(0.9, 1.52, 5.5, 2.1), (6.0, 1.52, 5.5, 2.1), (0.9, 3.92, 5.5, 2.1), (6.0, 3.92, 5.5, 2.1)]
+        return ((0.85, 1.64, 3.72, 4.2), (4.79, 1.64, 3.72, 4.2), (8.73, 1.64, 3.72, 4.2))
+    return ((0.9, 1.52, 5.5, 2.1), (6.0, 1.52, 5.5, 2.1), (0.9, 3.92, 5.5, 2.1), (6.0, 3.92, 5.5, 2.1))
+
+
+def resolve_matrix_grid_layout(theme: ThemeSpec) -> MatrixGridLayout:
+    override = theme.layouts.matrix_outer_card
+    if override is None:
+        return MATRIX_GRID
+    return replace(
+        MATRIX_GRID,
+        outer_card=FullCardLayout(
+            left=override.left,
+            top=override.top,
+            width=override.width,
+            height=override.height,
+        ),
+    )

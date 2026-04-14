@@ -1,3 +1,5 @@
+from .content_rewriter import RewriteAction, RewriteDeckResult, rewrite_deck, rewrite_slide, write_rewrite_log
+from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
     build_deck_output_path,
     build_log_output_path,
@@ -14,11 +16,9 @@ from .io import (
     load_outline_document,
     load_semantic_document,
     write_deck_document,
-    write_semantic_document,
     write_outline_document,
+    write_semantic_document,
 )
-from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
-from .content_rewriter import RewriteAction, RewriteDeckResult, rewrite_deck, rewrite_slide, write_rewrite_log
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import (
     AutoScoreResult,
@@ -31,11 +31,11 @@ from .quality_checks import (
     write_quality_gate_result,
 )
 from .schema import (
+    SUPPORTED_LAYOUTS,
+    SUPPORTED_THEMES,
     DeckDocument,
     OutlineDocument,
     OutlineItem,
-    SUPPORTED_LAYOUTS,
-    SUPPORTED_THEMES,
     ThemeMeta,
     ValidatedDeck,
     collect_deck_warnings,
@@ -49,6 +49,7 @@ from .services import (
     generate_deck_with_ai,
     generate_outline_with_ai,
     generate_semantic_deck_with_ai,
+    generate_semantic_decks_with_ai_batch,
     make_v2_ppt,
 )
 from .theme_loader import ThemeSpec, available_theme_names, load_theme
@@ -90,6 +91,7 @@ __all__ = [
     "compile_semantic_deck_payload",
     "generate_deck_with_ai",
     "generate_outline_with_ai",
+    "generate_semantic_decks_with_ai_batch",
     "generate_semantic_deck_with_ai",
     "generate_ppt",
     "is_semantic_deck_document",

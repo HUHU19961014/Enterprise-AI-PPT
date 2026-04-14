@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .utils import strip_text
+
 
 @dataclass(frozen=True)
 class SemanticSlideFeatures:
@@ -31,12 +33,6 @@ class SemanticLayoutPlan:
     reason: str
 
 
-def _strip_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
 def split_evenly(items: list[str]) -> tuple[list[str], list[str]]:
     midpoint = (len(items) + 1) // 2
     return items[:midpoint], items[midpoint:]
@@ -46,7 +42,7 @@ def dedupe_preserve_order(items: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
-        normalized = _strip_text(item)
+        normalized = strip_text(item)
         if not normalized or normalized in seen:
             continue
         seen.add(normalized)
@@ -55,7 +51,14 @@ def dedupe_preserve_order(items: list[str]) -> list[str]:
 
 
 def _statement_texts(blocks: list[dict[str, Any]]) -> list[str]:
-    return [_strip_text(block.get("text")) for block in blocks if block.get("kind") == "statement" and _strip_text(block.get("text"))]
+    statements: list[str] = []
+    for block in blocks:
+        if block.get("kind") != "statement":
+            continue
+        text = strip_text(block.get("text"))
+        if text:
+            statements.append(text)
+    return statements
 
 
 def _bullet_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,6 +1,9 @@
 from copy import deepcopy
+import logging
 
 from pptx import Presentation
+
+LOGGER = logging.getLogger(__name__)
 
 
 def clone_slide_after(prs: Presentation, source_idx: int, insert_after_idx: int, keep_rel_ids: bool = True):
@@ -20,8 +23,8 @@ def clone_slide_after(prs: Presentation, source_idx: int, insert_after_idx: int,
                 new_slide.part.rels.add_relationship(rel.reltype, rel._target, rel.rId)
             else:
                 new_slide.part.rels.add_relationship(rel.reltype, rel._target)
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.warning("slide rel copy failed: %s", exc)
     slide_id_list = prs.slides._sldIdLst
     new_id = slide_id_list[-1]
     del slide_id_list[-1]

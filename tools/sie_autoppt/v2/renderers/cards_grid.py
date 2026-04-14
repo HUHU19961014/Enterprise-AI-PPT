@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from .common import add_blank_slide, add_card, add_page_number, add_textbox, fill_background, rgb
+from .common import RenderContext, add_blank_slide, add_card, add_page_number, add_textbox, fill_background, rgb
 from .layout_constants import CARDS_GRID, TITLE_BAND, cards_grid_positions
 from ..schema import CardsGridSlide
-from ..theme_loader import ThemeSpec
 
 
-def render_cards_grid(prs, slide_data: CardsGridSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_cards_grid(ctx: RenderContext, slide_data: CardsGridSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
