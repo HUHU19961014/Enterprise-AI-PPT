@@ -302,6 +302,10 @@ def _run_svg_pipeline(*, project_path: Path, final_ppt_output: Path) -> None:
     )
 
 
+def _ensure_svg_export_dependency() -> None:
+    _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
+
+
 def build_context_schema() -> dict[str, Any]:
     return {
         "type": "object",
@@ -883,6 +887,7 @@ def make_v2_ppt(
     ppt_output: Path | None = None,
     outline_path: Path | None = None,
 ) -> V2MakeArtifacts:
+    _ensure_svg_export_dependency()
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
     normalized_language = normalize_language_code(language)
     resolved_generation_mode = normalize_generation_mode(generation_mode)

@@ -101,6 +101,12 @@ def build_main_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional run id used with --isolate-output. If omitted, a timestamp-based id is generated.",
     )
+    parser.add_argument(
+        "--ai-fallback",
+        default="disabled",
+        choices=("local-render", "disabled"),
+        help="AI failure handling for PPT commands: disabled (hard fail, default) or local-render (allow local fallback).",
+    )
     return parser
 
 

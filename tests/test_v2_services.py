@@ -31,6 +31,17 @@ def _workspace_tmpdir():
         shutil.rmtree(path, ignore_errors=True)
 
 class V2ServiceTests(unittest.TestCase):
+    def test_make_v2_ppt_fails_fast_when_svg_export_script_missing(self):
+        missing_script = Path(__file__).resolve().parents[1] / ".tmp_missing_svg_to_pptx.py"
+        with patch.object(services_module, "DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES", (missing_script,)), patch(
+            "tools.sie_autoppt.v2.services.ensure_generation_context"
+        ) as ensure_context:
+            with _workspace_tmpdir() as temp_dir, self.assertRaises(FileNotFoundError) as exc_info:
+                make_v2_ppt(topic="AI strategy", output_dir=Path(temp_dir))
+
+        self.assertIn("svg_to_pptx.py", str(exc_info.exception))
+        ensure_context.assert_not_called()
+
     def test_run_command_passes_timeout(self):
         completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         with patch("tools.sie_autoppt.v2.services.subprocess.run", return_value=completed) as run_mock:
@@ -225,6 +236,67 @@ class V2ServiceTests(unittest.TestCase):
         self.assertEqual(outline_request.strategic_analysis, strategy)
         self.assertEqual(deck_request.structured_context, context)
         self.assertEqual(deck_request.strategic_analysis, strategy)
+
+    def test_make_v2_ppt_runs_end_to_end_pipeline_with_svg_stage(self):
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "结论", "goal": "先给结论。"},
+                    {"page_no": 2, "title": "路径", "goal": "说明落地路径。"},
+                ]
+            }
+        )
+        semantic_payload = {
+            "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [
+                {
+                    "slide_id": "s1",
+                    "title": "先聚焦主链路落地，再扩展到协同优化",
+                    "intent": "conclusion",
+                    "anti_argument": "短期投入会上升，但可以换来可复用能力。",
+                    "blocks": [{"kind": "bullets", "items": ["优先打通主链路", "用试点沉淀标准", "季度复盘扩面"]}],
+                    "data_sources": [{"claim": "效率提升", "source": "内部试点", "confidence": "medium"}],
+                }
+            ],
+        }
+
+        with _workspace_tmpdir() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_split = temp_path / "total_md_split.py"
+            fake_finalize = temp_path / "finalize_svg.py"
+            fake_export = temp_path / "svg_to_pptx.py"
+            for script in (fake_split, fake_finalize, fake_export):
+                script.write_text("print('ok')\n", encoding="utf-8")
+
+            def _fake_run_command(command: list[str], *, step_name: str) -> None:
+                if step_name == "svg export":
+                    output_path = Path(command[command.index("-o") + 1])
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_bytes(b"pptx")
+
+            with patch.object(services_module, "DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES", (fake_split,)), patch.object(
+                services_module, "DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES", (fake_finalize,)
+            ), patch.object(
+                services_module, "DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES", (fake_export,)
+            ), patch(
+                "tools.sie_autoppt.v2.services.ensure_generation_context", return_value=({}, {})
+            ), patch(
+                "tools.sie_autoppt.v2.services.generate_outline_with_ai", return_value=outline
+            ), patch(
+                "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai", return_value=semantic_payload
+            ), patch(
+                "tools.sie_autoppt.v2.services._run_command", side_effect=_fake_run_command
+            ):
+                artifacts = make_v2_ppt(topic="AI strategy", output_dir=temp_path)
+
+            self.assertTrue(artifacts.outline_path.exists())
+            self.assertTrue(artifacts.semantic_path.exists())
+            self.assertTrue(artifacts.deck_path.exists())
+            self.assertTrue(artifacts.rewrite_log_path.exists())
+            self.assertTrue(artifacts.warnings_path.exists())
+            self.assertTrue(artifacts.pptx_path.exists())
+            self.assertIsNotNone(artifacts.svg_project_path)
+            self.assertTrue((artifacts.svg_project_path / "svg_output").exists())
 
     def test_generate_semantic_deck_with_ai_validates_before_returning(self):
         outline = OutlineDocument.model_validate(

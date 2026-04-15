@@ -6,6 +6,7 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .layout_ids import SUPPORTED_LAYOUTS as LAYOUT_ID_SOURCE
+from .style_variants import SUPPORTED_STYLE_VARIANTS
 from .theme_loader import available_theme_names
 from .utils import normalize_data_sources, normalize_string_list, strip_text
 
@@ -145,9 +146,22 @@ class DataSourceNote(TextStripMixin):
 
 
 class SlideAnnotations(TextStripMixin):
-    strip_optional_fields = ("anti_argument",)
+    strip_optional_fields = ("anti_argument", "template_hint")
     anti_argument: str | None = Field(default=None, max_length=120)
+    style_variant: Literal["minimal", "standard", "decorative"] | None = Field(default=None)
+    template_hint: str | None = Field(default=None, max_length=80)
     data_sources: list[DataSourceNote] = Field(default_factory=list, max_length=4)
+
+    @field_validator("style_variant", mode="before")
+    @classmethod
+    def _normalize_style_variant(cls, value: Any) -> str | None:
+        text = strip_text(value)
+        if not text:
+            return None
+        normalized = text.lower()
+        if normalized not in SUPPORTED_STYLE_VARIANTS:
+            raise ValueError(f"style_variant must be one of {', '.join(SUPPORTED_STYLE_VARIANTS)}")
+        return normalized
 
 
 class SectionBreakSlide(SlideAnnotations):

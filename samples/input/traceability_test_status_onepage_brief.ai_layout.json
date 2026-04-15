@@ -1,0 +1,157 @@
+{
+  "title": "溯源系统上线测试推进总览",
+  "kicker": "",
+  "summary_fragments": [
+    {
+      "text": "当前上线测试清单共 43 项：已完成 29 项，进行中 4 项，待复核 9 项，未开始 1 项。"
+    },
+    {
+      "text": "现阶段重点从“配置完成”转向“复核闭环 + UAT签署 + 漏洞收口”，确保上线评审前关键链路可验证。",
+      "bold": true,
+      "color": [
+        173,
+        5,
+        61
+      ],
+      "new_paragraph": true
+    }
+  ],
+  "law_rows": [
+    {
+      "number": "01",
+      "title": "总体进展与阶段判断",
+      "badge": "阶段结论",
+      "badge_red": false,
+      "runs": [
+        {
+          "text": "基础设置、系统部署、主数据及多数接口配置已完成，项目主干能力具备上线基础。",
+          "bold": true,
+          "color": [
+            15,
+            23,
+            42
+          ]
+        },
+        {
+          "text": "当前瓶颈集中在 UAT 收口与跨系统接口复核，不再是环境搭建问题。"
+        },
+        {
+          "text": "上线准备已进入“验证质量”阶段，管理动作需围绕责任人和时限推进。"
+        }
+      ]
+    },
+    {
+      "number": "02",
+      "title": "待复核与未完事项",
+      "badge": "优先收口",
+      "badge_red": true,
+      "runs": [
+        {
+          "text": "待复核 9 项：JIP-GTS、JIP-SAP ECC、JIP-SAP S4、JIP-TAS、JDP-CRM、JDP-GTS、JDP-GQMS、JDP-TAS、JDP-司库。",
+          "bold": true,
+          "color": [
+            15,
+            23,
+            42
+          ]
+        },
+        {
+          "text": "进行中 4 项：网络与硬件检查、UAT测试完成、UAT问题清单解决、正式环境漏洞修复。"
+        },
+        {
+          "text": "未开始 1 项：UAT测试报告签署（业务负责人签署后可形成上线评审闭环）。"
+        }
+      ]
+    },
+    {
+      "number": "03",
+      "title": "上线前关键动作建议",
+      "badge": "本周执行",
+      "badge_red": false,
+      "runs": [
+        {
+          "text": "建立“待复核接口日清单”，由责任人与复核人每日确认状态，避免复核滞后。",
+          "bold": true,
+          "color": [
+            15,
+            23,
+            42
+          ]
+        },
+        {
+          "text": "将 UAT 问题清单按严重级别分层关闭，并与漏洞修复联动出具关闭证据。"
+        },
+        {
+          "text": "将 UAT 报告签署时间锁定到上线评审前里程碑，形成可审计的完成证明。"
+        }
+      ]
+    }
+  ],
+  "right_kicker": "STATUS DASHBOARD",
+  "right_title": "上线测试从“建设完成”转向“复核与签署闭环”",
+  "process_steps": [
+    "进行中项收敛",
+    "待复核项逐条闭环",
+    "UAT问题清零",
+    "UAT报告签署",
+    "上线评审确认"
+  ],
+  "right_bullets": [
+    {
+      "label": "责任聚焦：",
+      "body": "待复核接口与文件同步主要责任人为张旺华，需联合刘贤胜完成复核确认。"
+    },
+    {
+      "label": "风险聚焦：",
+      "body": "UAT报告未签署与漏洞修复未完成是上线评审的两个硬门槛。"
+    },
+    {
+      "label": "节奏建议：",
+      "body": "按“每日复核看板 + 每周收口复盘”机制推进，确保评审节点按期通过。"
+    }
+  ],
+  "strategy_title": "执行口径：以“复核通过率、UAT收口率、签署完成率”作为上线前最后阶段核心指标",
+  "strategy_fragments": [
+    {
+      "text": "建议将待复核 9 项拆为按系统分组的冲刺任务包，明确责任人与复核时限，逐项沉淀复核证据。"
+    },
+    {
+      "text": "在 2026 年 4 月上线评审窗口前，先完成 UAT 问题与漏洞的双清零，再触发 UAT 报告签署与最终评审。",
+      "bold": true,
+      "color": [
+        255,
+        255,
+        255
+      ],
+      "new_paragraph": true
+    }
+  ],
+  "footer": "STRICTLY CONFIDENTIAL | 2026 SIE 溯源系统上线测试推进总览",
+  "page_no": "01",
+  "required_terms": [
+    "43 项",
+    "已完成 29 项",
+    "进行中 4 项",
+    "待复核 9 项",
+    "未开始 1 项",
+    "UAT测试报告签署",
+    "正式环境漏洞修复",
+    "JIP-SAP S4",
+    "JDP-CRM",
+    "上线评审"
+  ],
+  "variant": "auto",
+  "layout_strategy": "status_dashboard",
+  "layout_overrides": {
+    "summary_y_offset": -500000,
+    "hero_height": 620000,
+    "card_height": 1460000,
+    "process_panel_height": 1280000,
+    "strategy_height": 460000
+  },
+  "typography_overrides": {
+    "right_title_font_size": 18.0,
+    "panel_title_font_size": 15.6,
+    "bullet_font_size": 10.8
+  }
+}

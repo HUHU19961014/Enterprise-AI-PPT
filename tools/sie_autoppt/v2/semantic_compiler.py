@@ -3,6 +3,7 @@
 from typing import Any
 
 from .schema import ValidatedDeck, validate_deck_payload
+from .style_variants import resolve_style_variant
 from .semantic_router import (
     SemanticLayoutPlan,
     build_slide_features,
@@ -12,6 +13,7 @@ from .semantic_router import (
     split_evenly,
 )
 from .semantic_schema_builder import SUPPORTED_SLIDE_INTENTS
+from .template_engine.template_matcher import TemplateMatcher
 from .utils import normalize_data_sources, normalize_object_list, strip_text
 
 def _string_list(value: Any) -> list[str]:
@@ -192,9 +194,37 @@ def diversify_layout_plan(
 def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None = None) -> dict[str, Any]:
     features = build_slide_features(slide)
     plan = diversify_layout_plan(plan_semantic_slide_layout(slide), features, previous_layout=previous_layout)
+    style_variant = resolve_style_variant(features.intent)
+    template_hint = TemplateMatcher().match(
+        content_type=(
+            "timeline"
+            if features.timeline_blocks
+            else "comparison"
+            if features.comparison
+            else "matrix"
+            if features.matrix_blocks
+            else "stats"
+            if features.stat_blocks
+            else "cards"
+            if features.card_blocks
+            else "image_grid"
+            if features.image
+            else "chart"
+        ),
+        style_variant=style_variant,
+    ).template_id
+    semantic_hints: dict[str, Any] = {"style_variant": style_variant}
+    if template_hint:
+        semantic_hints["template_hint"] = template_hint
 
     if plan.layout == "section_break":
-        payload = {"slide_id": features.slide_id, "layout": "section_break", "title": features.title, **slide_annotations(features)}
+        payload = {
+            "slide_id": features.slide_id,
+            "layout": "section_break",
+            "title": features.title,
+            **slide_annotations(features),
+            **semantic_hints,
+        }
         if features.subtitle or features.key_message:
             payload["subtitle"] = features.subtitle or features.key_message
         return payload
@@ -205,6 +235,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": features.comparison["left_heading"], "items": features.comparison["left_items"]},
             "right": {"heading": features.comparison["right_heading"], "items": features.comparison["right_items"]},
         }
@@ -218,6 +249,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "title_image",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "content": content,
             "image": {
                 "mode": features.image.get("mode", "placeholder"),
@@ -232,6 +264,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "title_only",
             "title": features.statements[0] if features.statements else (features.key_message or features.title),
             **slide_annotations(features),
+            **semantic_hints,
         }
 
     if plan.layout == "timeline" and len(features.timeline_blocks) == 1:
@@ -241,6 +274,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "timeline",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "heading": block.get("heading") or features.key_message or features.subtitle,
             "stages": block["stages"],
         }
@@ -252,6 +286,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "stats_dashboard",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "heading": block.get("heading") or features.key_message or features.subtitle,
             "metrics": block["metrics"],
             "insights": collect_slide_insights(features, limit=4),
@@ -264,6 +299,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "matrix_grid",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "heading": block.get("heading") or features.key_message or features.subtitle,
             "x_axis": block.get("x_axis"),
             "y_axis": block.get("y_axis"),
@@ -277,6 +313,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "cards_grid",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "heading": block.get("heading") or features.key_message or features.subtitle,
             "cards": block["cards"],
         }
@@ -288,6 +325,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": left_card["title"], "items": [left_card.get("body") or left_card["title"]]},
             "right": {"heading": right_card["title"], "items": [right_card.get("body") or right_card["title"]]},
         }
@@ -299,6 +337,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": left_metric["label"], "items": [left_metric["value"]] + ([left_metric["note"]] if left_metric.get("note") else [])},
             "right": {"heading": right_metric["label"], "items": [right_metric["value"]] + ([right_metric["note"]] if right_metric.get("note") else [])},
         }
@@ -322,6 +361,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": x_axis or features.matrix_blocks[0].get("heading") or "Matrix Left", "items": _cell_items(left_cells)},
             "right": {"heading": y_axis or "Matrix Right", "items": _cell_items(right_cells or left_cells)},
         }
@@ -334,6 +374,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": left_block.get("heading") or "核心要点", "items": left_block["items"][:6]},
             "right": {"heading": right_block.get("heading") or "补充说明", "items": right_block["items"][:6]},
         }
@@ -346,6 +387,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
                 "layout": "title_content",
                 "title": features.title,
                 **slide_annotations(features),
+                **semantic_hints,
                 "content": content_items,
             }
         left_items, right_items = split_evenly(content_items)
@@ -355,6 +397,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
             "layout": "two_columns",
             "title": features.title,
             **slide_annotations(features),
+            **semantic_hints,
             "left": {"heading": heading or "核心要点", "items": left_items[:6]},
             "right": {"heading": "进一步展开", "items": right_items[:6] or [features.subtitle or features.title]},
         }
@@ -366,6 +409,7 @@ def compile_semantic_slide(slide: dict[str, Any], *, previous_layout: str | None
         "layout": "title_content",
         "title": features.title,
         **slide_annotations(features),
+        **semantic_hints,
         "content": content_items,
     }
 

@@ -52,6 +52,8 @@ from .services import (
     generate_semantic_decks_with_ai_batch,
     make_v2_ppt,
 )
+from .style_variants import SUPPORTED_STYLE_VARIANTS, resolve_style_variant, select_style_variant
+from .template_engine import TemplateMatcher, build_default_template_index
 from .theme_loader import ThemeSpec, available_theme_names, load_theme
 
 __all__ = [
@@ -65,6 +67,7 @@ __all__ = [
     "RewriteDeckResult",
     "SUPPORTED_LAYOUTS",
     "SUPPORTED_THEMES",
+    "SUPPORTED_STYLE_VARIANTS",
     "ContentWarning",
     "AutoScoreResult",
     "QualityGateResult",
@@ -104,6 +107,10 @@ __all__ = [
     "quality_gate",
     "rewrite_deck",
     "rewrite_slide",
+    "resolve_style_variant",
+    "select_style_variant",
+    "TemplateMatcher",
+    "build_default_template_index",
     "validate_deck_payload",
     "write_deck_document",
     "write_semantic_document",

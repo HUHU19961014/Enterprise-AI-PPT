@@ -50,6 +50,8 @@ class V2DeckDirectorTests(unittest.TestCase):
         self.assertEqual(slide.layout, "two_columns")
         self.assertEqual(slide.left.heading, "当前")
         self.assertEqual(slide.right.heading, "目标")
+        self.assertEqual(slide.style_variant, "standard")
+        self.assertTrue(slide.template_hint)
 
     def test_compile_framework_with_image_block_to_title_image(self):
         validated = compile_semantic_deck_payload(

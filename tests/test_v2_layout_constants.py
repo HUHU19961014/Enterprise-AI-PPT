@@ -11,6 +11,7 @@ from tools.sie_autoppt.v2.renderers.layout_constants import (
     TITLE_IMAGE,
     TITLE_ONLY,
     TWO_COLUMNS,
+    calculate_two_column_layout,
     cards_grid_positions,
     resolve_matrix_grid_layout,
 )
@@ -78,6 +79,18 @@ class V2LayoutConstantsTests(unittest.TestCase):
         self.assertEqual(resolved.outer_card.top, 1.1)
         self.assertEqual(resolved.outer_card.width, 10.6)
         self.assertEqual(resolved.outer_card.height, 4.9)
+
+    def test_calculate_two_column_layout_handles_empty_and_heavy_sides(self):
+        right_only = calculate_two_column_layout(left_items_count=0, right_items_count=5, density_factor=0.6)
+        heavy_left = calculate_two_column_layout(left_items_count=9, right_items_count=2, density_factor=0.8)
+        balanced = calculate_two_column_layout(left_items_count=4, right_items_count=4, density_factor=0.4)
+
+        self.assertEqual(right_only.left_card_width, 0.0)
+        self.assertGreater(right_only.right_card_width, balanced.right_card_width)
+        self.assertGreater(heavy_left.left_card_width, heavy_left.right_card_width)
+        self.assertLess(heavy_left.font_size, balanced.font_size)
+        self.assertGreater(balanced.left_card_width, 0.0)
+        self.assertGreater(balanced.right_card_width, 0.0)
 
 
 if __name__ == "__main__":

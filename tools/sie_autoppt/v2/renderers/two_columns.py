@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from ..schema import TwoColumnsSlide
 from .common import (
     RenderContext,
@@ -13,7 +15,21 @@ from .common import (
     resolve_body_font_size,
     should_render_comparison_table,
 )
-from .layout_constants import TITLE_BAND, TWO_COLUMNS
+from .layout_constants import TITLE_BAND, TWO_COLUMNS, calculate_two_column_layout
+
+
+def _resolve_density_factor(
+    *,
+    style_variant: Literal["minimal", "standard", "decorative"] | None,
+    left_items: int,
+    right_items: int,
+) -> float:
+    dense_baseline = 0.8 if max(left_items, right_items) > 5 else 0.4
+    if style_variant == "minimal":
+        return max(0.0, dense_baseline - 0.25)
+    if style_variant == "decorative":
+        return min(1.0, dense_baseline + 0.25)
+    return dense_baseline
 
 
 def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
@@ -37,11 +53,21 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
         bold=True,
     )
 
-    card_top = TWO_COLUMNS.card_top
-    card_height = TWO_COLUMNS.card_height
-    card_width = TWO_COLUMNS.card_width
-    left_left = TWO_COLUMNS.left_left
-    right_left = TWO_COLUMNS.right_left
+    dynamic_layout = calculate_two_column_layout(
+        left_items_count=len(slide_data.left.items),
+        right_items_count=len(slide_data.right.items),
+        density_factor=_resolve_density_factor(
+            style_variant=slide_data.style_variant,
+            left_items=len(slide_data.left.items),
+            right_items=len(slide_data.right.items),
+        ),
+    )
+    card_top = dynamic_layout.card_top
+    card_height = dynamic_layout.card_height
+    left_left = dynamic_layout.left_left
+    right_left = dynamic_layout.right_left
+    left_card_width = dynamic_layout.left_card_width or TWO_COLUMNS.card_width
+    right_card_width = dynamic_layout.right_card_width or TWO_COLUMNS.card_width
     if should_render_comparison_table(
         slide_data.left.heading,
         slide_data.right.heading,
@@ -62,13 +88,13 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
             theme=theme,
         )
     else:
-        add_card(slide, left_left, card_top, card_width, card_height, theme)
-        add_card(slide, right_left, card_top, card_width, card_height, theme)
+        add_card(slide, left_left, card_top, left_card_width, card_height, theme)
+        add_card(slide, right_left, card_top, right_card_width, card_height, theme)
         add_textbox(
             slide,
             left=left_left + TWO_COLUMNS.inner_card_text_padding,
             top=card_top + TWO_COLUMNS.heading_top_offset,
-            width=card_width - TWO_COLUMNS.inner_card_text_padding * 2,
+            width=left_card_width - TWO_COLUMNS.inner_card_text_padding * 2,
             height=TWO_COLUMNS.heading_height,
             text=slide_data.left.heading,
             font_name=theme.fonts.title,
@@ -80,7 +106,7 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
             slide,
             left=right_left + TWO_COLUMNS.inner_card_text_padding,
             top=card_top + TWO_COLUMNS.heading_top_offset,
-            width=card_width - TWO_COLUMNS.inner_card_text_padding * 2,
+            width=right_card_width - TWO_COLUMNS.inner_card_text_padding * 2,
             height=TWO_COLUMNS.heading_height,
             text=slide_data.right.heading,
             font_name=theme.fonts.title,
@@ -89,8 +115,8 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
             bold=True,
         )
 
-        left_font_size = resolve_body_font_size(theme, len(slide_data.left.items))
-        right_font_size = resolve_body_font_size(theme, len(slide_data.right.items))
+        left_font_size = min(resolve_body_font_size(theme, len(slide_data.left.items)), int(dynamic_layout.font_size))
+        right_font_size = min(resolve_body_font_size(theme, len(slide_data.right.items)), int(dynamic_layout.font_size))
         if len(slide_data.left.items) > 5 or len(slide_data.right.items) > 5:
             log.warn(f"{slide_data.slide_id}: two_columns content is dense and may need manual review.")
         add_bullet_list(
@@ -98,7 +124,7 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
             slide_data.left.items,
             left=left_left + TWO_COLUMNS.inner_horizontal_padding,
             top=card_top + TWO_COLUMNS.bullet_top_offset,
-            width=card_width - TWO_COLUMNS.inner_horizontal_padding * 2,
+            width=left_card_width - TWO_COLUMNS.inner_horizontal_padding * 2,
             height=card_height - TWO_COLUMNS.bullet_bottom_padding,
             theme=theme,
             font_size=left_font_size,
@@ -108,7 +134,7 @@ def render_two_columns(ctx: RenderContext, slide_data: TwoColumnsSlide):
             slide_data.right.items,
             left=right_left + TWO_COLUMNS.inner_horizontal_padding,
             top=card_top + TWO_COLUMNS.bullet_top_offset,
-            width=card_width - TWO_COLUMNS.inner_horizontal_padding * 2,
+            width=right_card_width - TWO_COLUMNS.inner_horizontal_padding * 2,
             height=card_height - TWO_COLUMNS.bullet_bottom_padding,
             theme=theme,
             font_size=right_font_size,

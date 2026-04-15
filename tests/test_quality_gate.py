@@ -89,6 +89,40 @@ class TestQualityGate:
         assert len(bullet_warnings) == 1
         assert bullet_warnings[0].warning_level == WARNING_LEVEL_WARNING
 
+    def test_timeline_stage_threshold_follows_rule_config(self, monkeypatch):
+        custom_thresholds = quality_checks_module.RULE_CONFIG.content_thresholds
+        custom_thresholds = custom_thresholds.__class__(
+            **{
+                **custom_thresholds.__dict__,
+                "timeline_max_stages": 3,
+            }
+        )
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=quality_checks_module.RULE_CONFIG.title_lengths,
+            bullets=quality_checks_module.RULE_CONFIG.bullets,
+            content_thresholds=custom_thresholds,
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TimelineSlide(
+            slide_id="s1",
+            layout="timeline",
+            title="实施路线",
+            stages=[{"title": "Q1"}, {"title": "Q2"}, {"title": "Q3"}, {"title": "Q4"}],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        stage_warnings = [w for w in warnings if "timeline has" in w.message]
+        assert len(stage_warnings) == 1
+        assert stage_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
     def test_title_length_thresholds(self):
         """Test that title length triggers appropriate warning levels."""
         # 20 chars: no warning

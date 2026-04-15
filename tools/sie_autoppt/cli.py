@@ -12,6 +12,15 @@ from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_f
 from .clarifier import DEFAULT_AUDIENCE_HINT, clarify_user_input, derive_planning_context, load_clarifier_session
 from .clarify_web import serve_clarifier_web
 from .cli_parser import build_main_parser
+from .cli_sie import handle_pre_v2_command
+from .cli_utils import (
+    build_fallback_structure_spec,
+    build_template_output_stem,
+    emit_progress,
+    load_brief_text,
+    validate_slide_args,
+    write_json_artifact,
+)
 from .cli_v2_commands import V2CommandContext, handle_v2_and_health_command
 from . import cli_routing
 from .config import (
@@ -29,7 +38,6 @@ from .exceptions import (
 )
 from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
-from .inputs.source_text import extract_source_text
 from .llm_openai import (
     OpenAIConfigurationError,
     OpenAIResponsesClient,
@@ -111,35 +119,6 @@ COMMAND_ALIASES = {
 }
 DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
 DEMO_SAMPLE_DECK = PROJECT_ROOT / "samples" / "sample_deck_v2.json"
-
-
-def load_brief_text(brief: str, brief_file: str) -> str:
-    parts = []
-    if brief.strip():
-        parts.append(brief.strip())
-    if brief_file.strip():
-        parts.append(extract_source_text(Path(brief_file)))
-    return "\n\n".join(part for part in parts if part)
-
-
-def validate_slide_args(args, parser: argparse.ArgumentParser):
-    uses_ai_range = bool(args.min_slides or args.max_slides)
-    uses_exact_chapters = bool(args.chapters)
-    is_ai_command = args.command in {
-        "ai-check",
-        "make",
-        "onepage",
-        "v2-outline",
-        "v2-plan",
-        "v2-make",
-    } or bool(getattr(args, "full_pipeline", False)) or bool(args.topic.strip() or args.outline_json.strip())
-
-    if uses_ai_range and not is_ai_command:
-        parser.error("--min-slides and --max-slides are only supported for AI generation workflows such as make, v2-plan, v2-make, and ai-check.")
-    if uses_exact_chapters and uses_ai_range and is_ai_command:
-        parser.error("--chapters cannot be combined with --min-slides/--max-slides for AI planning.")
-    if args.min_slides and args.max_slides and args.min_slides > args.max_slides:
-        parser.error("--min-slides cannot be greater than --max-slides.")
 
 
 def command_was_explicit(argv: list[str]) -> bool:
@@ -293,24 +272,6 @@ def run_demo_render(
     return DEMO_SAMPLE_DECK, render_result.rewrite_log_path, render_result.warnings_path, final_log_output, render_result.output_path
 
 
-def build_template_output_stem(output_name: str) -> str:
-    safe_name = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in output_name.strip())
-    return safe_name.strip("._") or DEFAULT_OUTPUT_PREFIX
-
-
-def write_json_artifact(path: Path, payload: JSONDict) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
-
-
-def emit_progress(enabled: bool, stage: str, detail: str) -> None:
-    """Print a normalized stage marker for long-running command flows."""
-    if not enabled:
-        return
-    print(f"[progress] {stage}: {detail}", file=sys.stderr)
-
-
 def _build_ai_page_schema(candidate_pattern_ids: tuple[str, ...]) -> dict[str, object]:
     return {
         "type": "object",
@@ -400,44 +361,6 @@ def apply_ai_content_layout_to_deck_spec(
     return replace(deck_spec, body_pages=refined_pages), trace
 
 
-def build_fallback_structure_spec(topic: str, brief_text: str) -> StructureSpec:
-    brief_lines = [line.strip(" -?\t") for line in brief_text.splitlines() if line.strip()]
-    while len(brief_lines) < 3:
-        brief_lines.append("")
-
-    return StructureSpec.from_dict(
-        {
-            "core_message": (brief_lines[0] or topic or "one-page briefing").strip(),
-            "structure_type": "general",
-            "sections": [
-                {
-                    "title": "Core Conclusion",
-                    "key_message": (brief_lines[0] or f"{topic}: clarify the key judgement first.").strip(),
-                    "arguments": [
-                        {"point": "Theme focus", "evidence": topic.strip() or "one-page briefing"},
-                        {"point": "Business background", "evidence": brief_lines[1] or "add business context to refine"},
-                    ],
-                },
-                {
-                    "title": "Key Support",
-                    "key_message": (brief_lines[1] or "organize support around facts, actions, and constraints.").strip(),
-                    "arguments": [
-                        {"point": "Facts", "evidence": brief_lines[0] or "summarize current inputs"},
-                        {"point": "Execution", "evidence": brief_lines[2] or "extract 2-3 priority actions"},
-                    ],
-                },
-                {
-                    "title": "Action Plan",
-                    "key_message": (brief_lines[2] or "define next actions and rollout cadence.").strip(),
-                    "arguments": [
-                        {"point": "Next step", "evidence": "compress into one-page action items"},
-                        {"point": "Usage", "evidence": "fit management review and business communication"},
-                    ],
-                },
-            ],
-        }
-    )
-
 def main():
     parser = build_main_parser()
     raw_argv = sys.argv[1:]
@@ -482,291 +405,44 @@ def main():
             parser=parser,
         )
 
-    if effective_command == "clarify":
-        if not args.topic.strip():
-            parser.error("--topic is required when command is 'clarify'.")
-        existing_session = None
-        if args.clarifier_state_file:
-            state_path = Path(args.clarifier_state_file)
-            if state_path.exists():
-                existing_session = load_clarifier_session(state_path.read_text(encoding="utf-8"))
-        result = clarify_user_input(
-            args.topic,
-            session=existing_session,
-            original_brief=brief_text,
-            model=args.llm_model or None,
-        )
-        if args.clarifier_state_file:
-            Path(args.clarifier_state_file).write_text(result.session.to_json(), encoding="utf-8")
-        print(result.to_json())
-        return
-
-    if effective_command == "clarify-web":
-        serve_clarifier_web(host=args.host, port=args.port)
-        return
-
-    if effective_command == "demo":
-        demo_sample_path, rewrite_log_path, warnings_path, log_output, ppt_output = run_demo_render(
-            output_dir=v2_output_dir,
-            output_prefix=args.output_name,
-            theme_name=args.theme.strip() or None,
-            log_output=Path(args.log_output) if args.log_output else None,
-            ppt_output=Path(args.ppt_output) if args.ppt_output else None,
-        )
-        print(str(demo_sample_path))
-        print(str(rewrite_log_path))
-        print(str(warnings_path))
-        print(str(log_output))
-        print(str(ppt_output))
-        return
-
-    if effective_command == "onepage":
-        structure_json = args.structure_json.strip()
-        if not structure_json and not args.topic.strip():
-            parser.error("--topic or --structure-json is required when command is 'onepage'.")
-
-        output_stem = build_template_output_stem(args.output_name)
-        template_output_dir = output_dir
-        if structure_json:
-            emit_progress(args.progress, "onepage", "loading structure json")
-            structure_path = Path(structure_json)
-            payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
-            structure = StructureSpec.from_dict(payload)
-        else:
-            try:
-                emit_progress(args.progress, "onepage", "calling AI structure planner")
-                structure_result = generate_structure_with_ai(
-                    StructureGenerationRequest(
-                        topic=args.topic.strip(),
-                        brief=brief_text,
-                        audience=args.audience,
-                        language=args.language,
-                        sections=args.chapters or 3,
-                        min_sections=args.min_slides,
-                        max_sections=args.max_slides,
-                    ),
-                    model=args.llm_model or None,
-                )
-                structure = structure_result.structure
-            except OpenAIConfigurationError as exc:
-                parser.exit(
-                    status=1,
-                    message=(
-                        "AI is mandatory for 'onepage' content/layout planning. "
-                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
-                    ),
-                )
-            except OpenAIResponsesError as exc:
-                parser.exit(status=1, message=f"AI planning failed for 'onepage': {exc}\n")
-
-        onepage_brief = build_onepage_brief_from_structure(
-            structure,
-            topic=args.topic.strip() or structure.core_message,
-            footer=f"STRICTLY CONFIDENTIAL | 2026 SIE {output_stem}",
-            page_no="01",
-            layout_strategy=args.onepage_strategy.strip() or "auto",
-        )
-        brief_output_path = template_output_dir / f"{output_stem}.onepage_brief.json"
-        write_json_artifact(brief_output_path, asdict(onepage_brief))
-        onepage_output_path = (
-            Path(args.ppt_output)
-            if args.ppt_output
-            else template_output_dir / f"{output_stem}.onepage.pptx"
-        )
-        try:
-            emit_progress(args.progress, "onepage", "rendering onepage PPT")
-            built_path, review_path, score_path, _ = build_onepage_slide(
-                onepage_brief,
-                output_path=onepage_output_path,
-                export_review=True,
-                model=args.llm_model or None,
-                require_ai_strategy=True,
-            )
-        except OpenAIConfigurationError as exc:
-            parser.exit(
-                status=1,
-                message=(
-                    "AI is mandatory for 'onepage' content/layout planning. "
-                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
-                ),
-            )
-        except OpenAIResponsesError as exc:
-            parser.exit(status=1, message=f"AI strategy selection failed for 'onepage': {exc}\n")
-        print(str(brief_output_path))
-        print(str(review_path))
-        print(str(score_path))
-        print(str(built_path))
-        return
-
-    if effective_command == "sie-render":
-        structure_json = args.structure_json.strip()
-        deck_spec_json = args.deck_spec_json.strip()
-        uses_topic_generation = bool(args.topic.strip()) and not structure_json and not deck_spec_json
-        specified_inputs = sum(bool(value) for value in (structure_json, deck_spec_json, uses_topic_generation))
-        if specified_inputs != 1:
-            parser.error(
-                "exactly one actual-template input is required when command is 'sie-render': "
-                "use --structure-json, --deck-spec-json, or --topic."
-            )
-
-        template_path = Path(args.template_path) if args.template_path else DEFAULT_TEMPLATE
-        reference_body_path = (
-            Path(args.reference_body_path)
-            if args.reference_body_path
-            else (DEFAULT_REFERENCE_BODY if DEFAULT_REFERENCE_BODY.exists() else None)
-        )
-        template_output_dir = output_dir
-        output_stem = build_template_output_stem(args.output_name)
-
-        if structure_json:
-            emit_progress(args.progress, "sie-render", "loading structure json")
-            structure_path = Path(structure_json)
-            payload = json.loads(structure_path.read_text(encoding="utf-8-sig"))
-            structure = StructureSpec.from_dict(payload)
-            deck_spec = build_deck_spec_from_structure(
-                structure,
-                topic=args.topic.strip() or structure.core_message,
-                cover_title=args.cover_title.strip() or None,
-            )
-            deck_spec_path = (
-                Path(args.deck_spec_output)
-                if args.deck_spec_output
-                else template_output_dir / f"{output_stem}.deck_spec.json"
-            )
-            write_deck_spec(deck_spec, deck_spec_path)
-            render_deck_spec = deck_spec
-        elif uses_topic_generation:
-            try:
-                emit_progress(args.progress, "sie-render", "calling AI structure planner")
-                structure_result = generate_structure_with_ai(
-                    StructureGenerationRequest(
-                        topic=args.topic.strip(),
-                        brief=brief_text,
-                        audience=args.audience,
-                        language=args.language,
-                        sections=args.chapters,
-                        min_sections=args.min_slides,
-                        max_sections=args.max_slides,
-                    ),
-                    model=args.llm_model or None,
-                )
-            except OpenAIConfigurationError as exc:
-                parser.exit(
-                    status=1,
-                    message=(
-                        "AI is mandatory for 'sie-render' content/layout planning. "
-                        f"Configure a reachable AI endpoint first. Details: {exc}\n"
-                    ),
-                )
-            except OpenAIResponsesError as exc:
-                parser.exit(status=1, message=f"AI planning failed for 'sie-render': {exc}\n")
-            deck_spec = build_deck_spec_from_structure(
-                structure_result.structure,
-                topic=args.topic.strip(),
-                cover_title=args.cover_title.strip() or None,
-            )
-            deck_spec_path = (
-                Path(args.deck_spec_output)
-                if args.deck_spec_output
-                else template_output_dir / f"{output_stem}.deck_spec.json"
-            )
-            write_deck_spec(deck_spec, deck_spec_path)
-            render_deck_spec = deck_spec
-        else:
-            emit_progress(args.progress, "sie-render", "loading deck spec json")
-            deck_spec_path = Path(deck_spec_json)
-            render_deck_spec = load_deck_spec(deck_spec_path)
-
-        if len(render_deck_spec.body_pages) == 1:
-            parser.exit(
-                status=1,
-                message=(
-                    "Single-page SIE output must use the 'onepage' command to avoid cover/catalog/ending slides.\n"
-                ),
-            )
-
-        try:
-            emit_progress(args.progress, "sie-render", "calling AI content/layout refinement")
-            ai_refined_deck_spec, ai_trace = apply_ai_content_layout_to_deck_spec(
-                render_deck_spec,
-                model=args.llm_model.strip() or None,
-            )
-        except CliUserInputError as exc:
-            parser.exit(status=2, message=f"invalid sie-render input: {exc}\n")
-        except OpenAIConfigurationError as exc:
-            parser.exit(
-                status=1,
-                message=(
-                    "AI is mandatory for 'sie-render' content/layout planning. "
-                    f"Configure a reachable AI endpoint first. Details: {exc}\n"
-                ),
-            )
-        except OpenAIResponsesError as exc:
-            parser.exit(
-                status=1,
-                message=f"AI content/layout refinement failed for 'sie-render': {exc}\n",
-            )
-
-        deck_spec_path = (
-            Path(args.deck_spec_output)
-            if args.deck_spec_output
-            else template_output_dir / f"{output_stem}.deck_spec.ai.json"
-        )
-        write_deck_spec(ai_refined_deck_spec, deck_spec_path)
-        render_deck_spec = ai_refined_deck_spec
-        ai_trace_path = template_output_dir / f"{output_stem}.ai_layout_trace.json"
-        write_json_artifact(ai_trace_path, {"pages": ai_trace})
-
-        render_result = generate_ppt_artifacts_from_deck_spec(
-            template_path=template_path,
-            deck_spec_path=deck_spec_path,
-            reference_body_path=reference_body_path,
-            output_prefix=args.output_name,
-            active_start=max(0, args.active_start),
-            output_dir=template_output_dir,
-        )
-        final_ppt_path = render_result.output_path
-        if args.ppt_output:
-            requested_ppt_path = Path(args.ppt_output)
-            requested_ppt_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(render_result.output_path), str(requested_ppt_path))
-            final_ppt_path = requested_ppt_path
-
-        render_trace_path = (
-            Path(args.render_trace_output)
-            if args.render_trace_output
-            else template_output_dir / f"{output_stem}.render_trace.json"
-        )
-        write_json_artifact(render_trace_path, asdict(render_result.render_trace))
-        print(str(deck_spec_path))
-        print(str(render_trace_path))
-        print(str(final_ppt_path))
-        return
-
-    if effective_command == "visual-draft":
-        if not args.deck_spec_json.strip():
-            parser.error("--deck-spec-json is required when command is 'visual-draft'.")
-        try:
-            artifacts = generate_visual_draft_artifacts(
-                deck_spec=load_deck_spec(Path(args.deck_spec_json)),
-                output_dir=output_dir,
-                output_name=build_template_output_stem(args.output_name),
-                browser_path=args.browser.strip(),
-                model=args.llm_model.strip(),
-                page_index=max(0, int(args.page_index)),
-                layout_hint=args.layout_hint.strip() or "auto",
-                with_ai_review=bool(args.with_ai_review),
-                visual_rules_path=args.visual_rules_path.strip(),
-            )
-        except CliExecutionError as exc:
-            parser.exit(status=exc.exit_code, message=f"visual-draft failed: {exc}\n")
-        except Exception as exc:  # pragma: no cover - normalized user-facing error handling
-            parser.exit(status=1, message=f"visual-draft failed: {exc}\n")
-        print(str(artifacts.visual_spec_path))
-        print(str(artifacts.preview_html_path))
-        print(str(artifacts.preview_png_path))
-        print(str(artifacts.visual_score_path))
-        print(str(artifacts.ai_review_path))
+    template_path = Path(args.template_path) if args.template_path else DEFAULT_TEMPLATE
+    reference_body_path = (
+        Path(args.reference_body_path)
+        if args.reference_body_path
+        else (DEFAULT_REFERENCE_BODY if DEFAULT_REFERENCE_BODY.exists() else None)
+    )
+    if handle_pre_v2_command(
+        effective_command=effective_command,
+        args=args,
+        parser=parser,
+        output_dir=output_dir,
+        v2_output_dir=v2_output_dir,
+        brief_text=brief_text,
+        load_clarifier_session=load_clarifier_session,
+        clarify_user_input=clarify_user_input,
+        serve_clarifier_web=serve_clarifier_web,
+        run_demo_render=run_demo_render,
+        build_template_output_stem=build_template_output_stem,
+        emit_progress=emit_progress,
+        generate_structure_with_ai=generate_structure_with_ai,
+        structure_spec_cls=StructureSpec,
+        structure_generation_request_cls=StructureGenerationRequest,
+        openai_configuration_error_cls=OpenAIConfigurationError,
+        openai_responses_error_cls=OpenAIResponsesError,
+        build_onepage_brief_from_structure=build_onepage_brief_from_structure,
+        build_onepage_slide=build_onepage_slide,
+        write_json_artifact=write_json_artifact,
+        build_deck_spec_from_structure=build_deck_spec_from_structure,
+        load_deck_spec=load_deck_spec,
+        write_deck_spec=write_deck_spec,
+        apply_ai_content_layout_to_deck_spec=apply_ai_content_layout_to_deck_spec,
+        generate_ppt_artifacts_from_deck_spec=generate_ppt_artifacts_from_deck_spec,
+        generate_visual_draft_artifacts=generate_visual_draft_artifacts,
+        cli_execution_error_cls=CliExecutionError,
+        cli_user_input_error_cls=CliUserInputError,
+        template_path=template_path,
+        reference_body_path=reference_body_path,
+    ):
         return
 
     if handle_v2_and_health_command(

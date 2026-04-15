@@ -193,6 +193,8 @@ class OnePageBrief:
     layout_strategy: str = ""
     reference_request: str = ""
     banned_phrases: tuple[str, ...] = ()
+    layout_overrides: dict[str, float] | None = None
+    typography_overrides: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -743,7 +745,17 @@ def render_process_flow(slide, steps: tuple[str, ...], *, left: int, top: int, w
         current_x += step_w + gap_w
 
 
-def render_bullets(slide, bullets: tuple[BulletItem, ...], *, left: int, top: int, width: int, row_gap: int = 490000, marker_color: tuple[int, int, int] = ACCENT) -> None:
+def render_bullets(
+    slide,
+    bullets: tuple[BulletItem, ...],
+    *,
+    left: int,
+    top: int,
+    width: int,
+    row_gap: int = 490000,
+    marker_color: tuple[int, int, int] = ACCENT,
+    font_size: float = 10.6,
+) -> None:
     for index, item in enumerate(bullets):
         bullet_y = top + index * row_gap
         add_shape(slide, MSO_AUTO_SHAPE_TYPE.RECTANGLE, left, bullet_y + 26000, 56000, 56000, fill=marker_color)
@@ -751,10 +763,10 @@ def render_bullets(slide, bullets: tuple[BulletItem, ...], *, left: int, top: in
         paragraph = box.text_frame.paragraphs[0]
         head = paragraph.add_run()
         head.text = item.label
-        set_run_style(head, size=10.6, color=INK, bold=True)
+        set_run_style(head, size=font_size, color=INK, bold=True)
         tail = paragraph.add_run()
         tail.text = item.body
-        set_run_style(tail, size=10.6, color=TEXT_MED, bold=False)
+        set_run_style(tail, size=font_size, color=TEXT_MED, bold=False)
 
 
 def render_strategy_box(slide, title: str, fragments: tuple[TextFragment, ...], *, left: int, top: int, width: int, height: int) -> None:
@@ -879,18 +891,29 @@ def render_signal_band(slide, brief: OnePageBrief) -> None:
 
 
 def render_summary_board(slide, brief: OnePageBrief) -> None:
+    layout = brief.layout_overrides or {}
+    typo = brief.typography_overrides or {}
+
+    y_offset = int(layout.get("summary_y_offset", -420000))
+    hero_height = int(layout.get("hero_height", 560000))
+    card_height = int(layout.get("card_height", 1520000))
+    process_panel_height = int(layout.get("process_panel_height", 1320000))
+    strategy_height = int(layout.get("strategy_height", 420000))
+    right_title_font = float(typo.get("right_title_font_size", 17.0))
+    panel_title_font = float(typo.get("panel_title_font_size", 15.2))
+    bullet_font = float(typo.get("bullet_font_size", 10.6))
+
     hero_left = 720000
-    hero_top = 1880000
+    hero_top = 1880000 + y_offset
     hero_width = 10600000
-    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, hero_left, hero_top, hero_width, 560000, fill=LIGHT_BG, line=LINE)
+    add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, hero_left, hero_top, hero_width, hero_height, fill=LIGHT_BG, line=LINE)
     add_textbox(slide, hero_left + 180000, hero_top + 90000, 3600000, 150000, text=brief.right_kicker or "EXECUTIVE VIEW", font_size=9.4, color=ACCENT, bold=True)
-    add_textbox(slide, hero_left + 180000, hero_top + 220000, 4600000, 220000, text=brief.right_title, font_size=17.0, color=INK, bold=True)
+    add_textbox(slide, hero_left + 180000, hero_top + 220000, 4600000, 220000, text=brief.right_title, font_size=right_title_font, color=INK, bold=True)
     hero_summary = add_textbox(slide, hero_left + 5100000, hero_top + 120000, 5200000, 280000)
     write_fragments(hero_summary, brief.summary_fragments, font_size=10.8, default_color=TEXT_MED)
 
-    card_top = 2620000
+    card_top = 2620000 + y_offset
     card_width = 3200000
-    card_height = 1520000
     gap = 220000
     for index, item in enumerate(brief.law_rows[:3]):
         left = 720000 + index * (card_width + gap)
@@ -911,24 +934,31 @@ def render_summary_board(slide, brief: OnePageBrief) -> None:
         write_fragments(desc, item.runs, font_size=9.2, default_color=TEXT_MED)
 
     process_panel_left = 720000
-    process_panel_top = 4380000
+    process_panel_top = 4380000 + y_offset
     process_panel_width = 5000000
-    process_panel_height = 1320000
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, process_panel_left, process_panel_top, process_panel_width, process_panel_height, fill=WHITE, line=LINE)
     add_textbox(slide, process_panel_left + 180000, process_panel_top + 180000, process_panel_width - 360000, 170000, text="KEY FLOW", font_size=9.4, color=ACCENT, bold=True)
-    add_textbox(slide, process_panel_left + 180000, process_panel_top + 390000, process_panel_width - 360000, 220000, text="关键流程与交接节奏", font_size=15.2, color=INK, bold=True)
+    add_textbox(slide, process_panel_left + 180000, process_panel_top + 390000, process_panel_width - 360000, 220000, text="关键流程与交接节奏", font_size=panel_title_font, color=INK, bold=True)
     render_process_flow(slide, brief.process_steps, left=process_panel_left + 180000, top=process_panel_top + 760000, width=process_panel_width - 360000)
 
     action_panel_left = 5940000
-    action_panel_top = 4380000
+    action_panel_top = 4380000 + y_offset
     action_panel_width = 5380000
-    action_panel_height = 1320000
+    action_panel_height = process_panel_height
     add_shape(slide, MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, action_panel_left, action_panel_top, action_panel_width, action_panel_height, fill=WHITE, line=LINE)
     add_textbox(slide, action_panel_left + 220000, action_panel_top + 180000, action_panel_width - 440000, 170000, text="ACTION POINTS", font_size=9.4, color=ACCENT, bold=True)
-    add_textbox(slide, action_panel_left + 220000, action_panel_top + 390000, action_panel_width - 440000, 180000, text="关键动作与跟进重点", font_size=15.0, color=INK, bold=True)
-    render_bullets(slide, brief.right_bullets, left=action_panel_left + 220000, top=action_panel_top + 700000, width=action_panel_width - 440000, row_gap=250000)
+    add_textbox(slide, action_panel_left + 220000, action_panel_top + 390000, action_panel_width - 440000, 180000, text="关键动作与跟进重点", font_size=panel_title_font, color=INK, bold=True)
+    render_bullets(slide, brief.right_bullets, left=action_panel_left + 220000, top=action_panel_top + 700000, width=action_panel_width - 440000, row_gap=250000, font_size=bullet_font)
 
-    render_strategy_box(slide, brief.strategy_title, brief.strategy_fragments, left=720000, top=5860000, width=10600000, height=420000)
+    render_strategy_box(
+        slide,
+        brief.strategy_title,
+        brief.strategy_fragments,
+        left=720000,
+        top=5860000 + y_offset,
+        width=10600000,
+        height=strategy_height,
+    )
 
 
 def render_comparison_split(slide, brief: OnePageBrief) -> None:

@@ -46,6 +46,18 @@ class TwoColumnLayout:
 
 
 @dataclass(frozen=True)
+class DynamicTwoColumnLayout:
+    card_top: float
+    card_height: float
+    left_left: float
+    right_left: float
+    left_card_width: float
+    right_card_width: float
+    spacing: float
+    font_size: float
+
+
+@dataclass(frozen=True)
 class TitleContentLayout:
     card: FullCardLayout = FullCardLayout(left=0.78, top=1.28, width=11.72, height=4.95)
     timeline_left: float = 1.0
@@ -209,4 +221,58 @@ def resolve_matrix_grid_layout(theme: ThemeSpec) -> MatrixGridLayout:
             width=override.width,
             height=override.height,
         ),
+    )
+
+
+def calculate_two_column_layout(
+    *,
+    left_items_count: int,
+    right_items_count: int,
+    density_factor: float = 0.5,
+) -> DynamicTwoColumnLayout:
+    card_top = TWO_COLUMNS.card_top
+    card_height = TWO_COLUMNS.card_height
+    left_left = TWO_COLUMNS.left_left
+    base_gap = max(0.28, min(0.52, 0.52 - max(0.0, min(1.0, density_factor)) * 0.24))
+    total_width = 13.33 - left_left - 0.78
+
+    left_count = max(0, int(left_items_count))
+    right_count = max(0, int(right_items_count))
+    if left_count == 0 and right_count == 0:
+        left_ratio = 0.5
+    elif left_count == 0:
+        left_ratio = 0.0
+    elif right_count == 0:
+        left_ratio = 1.0
+    else:
+        left_ratio = left_count / (left_count + right_count)
+
+    left_card_width = max(0.0, round((total_width - base_gap) * left_ratio, 3))
+    right_card_width = max(0.0, round((total_width - base_gap) - left_card_width, 3))
+
+    # Ensure both columns remain readable when both sides carry content.
+    min_column_width = 3.25
+    if left_count > 0 and right_count > 0:
+        if left_card_width < min_column_width:
+            shift = min_column_width - left_card_width
+            left_card_width += shift
+            right_card_width = max(min_column_width, right_card_width - shift)
+        elif right_card_width < min_column_width:
+            shift = min_column_width - right_card_width
+            right_card_width += shift
+            left_card_width = max(min_column_width, left_card_width - shift)
+
+    right_left = left_left + left_card_width + base_gap
+    max_items = max(left_count, right_count, 1)
+    font_size = max(10.0, 14.0 - max(0, max_items - 4) * 0.5)
+
+    return DynamicTwoColumnLayout(
+        card_top=card_top,
+        card_height=card_height,
+        left_left=left_left,
+        right_left=right_left,
+        left_card_width=left_card_width,
+        right_card_width=right_card_width,
+        spacing=base_gap,
+        font_size=font_size,
     )

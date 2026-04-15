@@ -87,6 +87,72 @@ class V2RendererUnitTests(unittest.TestCase):
         add_comparison_table.assert_called_once()
         add_card.assert_not_called()
 
+    def test_render_two_columns_applies_dynamic_geometry_for_unbalanced_content(self):
+        slide_data = TwoColumnsSlide.model_validate(
+            {
+                "slide_id": "s1",
+                "layout": "two_columns",
+                "title": "Comparison",
+                "left": {"heading": "Current", "items": ["a", "b", "c", "d", "e", "f"]},
+                "right": {"heading": "Target", "items": ["x"]},
+            }
+        )
+        with (
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_blank_slide", return_value=object()),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.fill_background"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_textbox"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.should_render_comparison_table", return_value=False),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_comparison_table"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_card") as add_card,
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_bullet_list"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_page_number"),
+        ):
+            render_two_columns(self._ctx(), slide_data)
+
+        self.assertEqual(add_card.call_count, 2)
+        left_card_call = add_card.call_args_list[0]
+        right_card_call = add_card.call_args_list[1]
+        self.assertGreater(left_card_call.args[3], right_card_call.args[3])
+
+    def test_render_two_columns_uses_style_variant_to_adjust_density(self):
+        base_payload = {
+            "slide_id": "s1",
+            "layout": "two_columns",
+            "title": "Comparison",
+            "left": {"heading": "Current", "items": ["a", "b", "c"]},
+            "right": {"heading": "Target", "items": ["x", "y", "z"]},
+        }
+        minimal_slide = TwoColumnsSlide.model_validate({**base_payload, "style_variant": "minimal"})
+        decorative_slide = TwoColumnsSlide.model_validate({**base_payload, "style_variant": "decorative"})
+
+        with (
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_blank_slide", return_value=object()),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.fill_background"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_textbox"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.should_render_comparison_table", return_value=False),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_comparison_table"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_bullet_list"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_page_number"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_card") as add_card_minimal,
+        ):
+            render_two_columns(self._ctx(), minimal_slide)
+
+        with (
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_blank_slide", return_value=object()),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.fill_background"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_textbox"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.should_render_comparison_table", return_value=False),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_comparison_table"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_bullet_list"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_page_number"),
+            patch("tools.sie_autoppt.v2.renderers.two_columns.add_card") as add_card_decorative,
+        ):
+            render_two_columns(self._ctx(), decorative_slide)
+
+        minimal_left_width = add_card_minimal.call_args_list[0].args[3]
+        decorative_left_width = add_card_decorative.call_args_list[0].args[3]
+        self.assertGreater(decorative_left_width, minimal_left_width)
+
     def test_render_title_content_uses_bullets_when_not_timeline(self):
         slide_data = TitleContentSlide.model_validate(
             {

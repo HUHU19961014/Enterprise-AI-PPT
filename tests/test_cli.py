@@ -267,6 +267,20 @@ class CliTests(unittest.TestCase):
                 patch("sys.argv", ["sie-autoppt", "v2-render", "--deck-json", str(deck_json), "--progress"]),
                 patch("tools.sie_autoppt.cli.load_deck_document", return_value=fake_deck),
                 patch(
+                    "tools.sie_autoppt.cli.review_deck_once",
+                    return_value=type(
+                        "FakeReviewArtifacts",
+                        (),
+                        {
+                            "review_path": Path(temp_dir) / "review_once.json",
+                            "patch_path": Path(temp_dir) / "patches_review_once.json",
+                            "deck_path": Path(temp_dir) / "review_once.deck.json",
+                            "pptx_path": Path(temp_dir) / "review_once.pptx",
+                            "preview_dir": Path(temp_dir) / "previews_review_once",
+                        },
+                    )(),
+                ),
+                patch(
                     "tools.sie_autoppt.cli.generate_v2_ppt",
                     return_value=type(
                         "FakeRenderArtifacts",
@@ -281,8 +295,10 @@ class CliTests(unittest.TestCase):
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
+                (Path(temp_dir) / "patches_review_once.json").write_text('{"patches":[]}', encoding="utf-8")
                 cli.main()
-        self.assertIn("[progress] v2-render: rendering ppt from deck json", stderr.getvalue())
+        self.assertIn("[progress] v2-render: running AI review gate before rendering", stderr.getvalue())
+        self.assertIn("[progress] v2-render: rendering ppt from AI-gated deck json", stderr.getvalue())
 
     def test_v2_patch_applies_incremental_patch_set(self):
         stdout = io.StringIO()

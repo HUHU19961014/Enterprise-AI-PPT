@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .design_engine.layout_strategy import decide_layout_strategy
+from .design_engine.visual_balance import ContentBlock
+from .llm_layout_planner import decide_layout_with_llm_or_none
+from .style_variants import resolve_style_variant
+from .template_engine.template_matcher import TemplateMatcher
 from .utils import strip_text
 
 
@@ -200,8 +205,85 @@ def build_slide_features(slide: dict[str, Any]) -> SemanticSlideFeatures:
     )
 
 
+def _build_design_blocks(features: SemanticSlideFeatures) -> list[ContentBlock]:
+    blocks: list[ContentBlock] = []
+    if features.bullet_blocks:
+        for block_index, block in enumerate(features.bullet_blocks):
+            lane = "left" if block_index % 2 == 0 else "right"
+            for item in block["items"]:
+                normalized = strip_text(item)
+                if not normalized:
+                    continue
+                blocks.append(
+                    ContentBlock(
+                        content=normalized,
+                        length=len(normalized),
+                        priority=3 if block_index == 0 else 2,
+                        lane=lane,
+                        media_type="text",
+                    )
+                )
+    for text in features.statements:
+        blocks.append(ContentBlock(content=text, length=len(text), priority=4, lane="center", media_type="text"))
+    if features.key_message:
+        blocks.append(
+            ContentBlock(
+                content=features.key_message,
+                length=len(features.key_message),
+                priority=5,
+                lane="center",
+                media_type="text",
+            )
+        )
+    if not blocks:
+        for item in features.content_items:
+            blocks.append(ContentBlock(content=item, length=len(item), priority=2, lane="center", media_type="text"))
+    return blocks
+
+
+def _infer_template_content_type(features: SemanticSlideFeatures) -> str:
+    if features.timeline_blocks:
+        return "timeline"
+    if features.comparison:
+        return "comparison"
+    if features.matrix_blocks:
+        return "matrix"
+    if features.stat_blocks:
+        return "stats"
+    if features.card_blocks:
+        return "cards"
+    if features.image:
+        return "image_grid"
+    return "chart"
+
+
+def _map_template_type_to_layout(content_type: str) -> str:
+    if content_type == "timeline":
+        return "timeline"
+    if content_type == "comparison":
+        return "two_columns"
+    if content_type == "matrix":
+        return "matrix_grid"
+    if content_type == "stats":
+        return "stats_dashboard"
+    if content_type in {"cards", "image_grid"}:
+        return "cards_grid"
+    return "title_content"
+
+
 def plan_semantic_slide_layout(slide: dict[str, Any]) -> SemanticLayoutPlan:
     features = build_slide_features(slide)
+    strategy = decide_layout_strategy(
+        intent=features.intent,
+        blocks=_build_design_blocks(features),
+        has_comparison=features.comparison is not None,
+        has_image=features.image is not None,
+    )
+    style_variant = resolve_style_variant(features.intent)
+    template_match = TemplateMatcher().match(
+        content_type=_infer_template_content_type(features),
+        style_variant=style_variant,
+    )
 
     if features.intent in {"cover", "section"}:
         return SemanticLayoutPlan(features.slide_id, "section_break", "section-intent")
@@ -227,12 +309,41 @@ def plan_semantic_slide_layout(slide: dict[str, Any]) -> SemanticLayoutPlan:
         candidates.append((79, "two_columns", "stats-pair"))
     if len(features.bullet_blocks) >= 2:
         candidates.append((78, "two_columns", "multi-block-bullets"))
+    if not template_match.fallback:
+        candidates.append(
+            (
+                59,
+                _map_template_type_to_layout(template_match.content_type),
+                f"template:{template_match.template_id}",
+            )
+        )
     if len(features.content_items) > 6:
-        candidates.append((70, "two_columns", "dense-content"))
+        if strategy.layout_preference == "title_content":
+            candidates.append((71, "title_content", "dense-content-strategy"))
+        else:
+            candidates.append((70, "two_columns", "dense-content"))
     if features.content_items:
         candidates.append((60, "title_content", "default-content"))
     else:
         candidates.append((50, "title_content", "fallback-content"))
+
+    llm_decision = decide_layout_with_llm_or_none(
+        slide_title=features.title,
+        intent=features.intent,
+        content_items=features.content_items,
+        available_layouts=(
+            "title_content",
+            "two_columns",
+            "title_image",
+            "title_only",
+            "timeline",
+            "stats_dashboard",
+            "matrix_grid",
+            "cards_grid",
+        ),
+    )
+    if llm_decision is not None and llm_decision.confidence >= 0.7:
+        candidates.append((96, llm_decision.layout, f"llm:{llm_decision.reason}"))
 
     _, layout, reason = max(candidates, key=lambda item: item[0])
     return SemanticLayoutPlan(features.slide_id, layout, reason)

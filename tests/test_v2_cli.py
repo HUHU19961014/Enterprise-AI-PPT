@@ -162,11 +162,14 @@ class V2CliTests(unittest.TestCase):
 
         self.assertEqual(make_mock.call_args.kwargs["output_dir"], Path(temp_dir) / "runs" / "run-001")
 
-    def test_v2_make_timeout_uses_graceful_fallback(self):
+    def test_v2_make_timeout_uses_graceful_fallback_when_enabled(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             with (
-                patch("sys.argv", ["sie-autoppt", "v2-make", "--topic", "AI make", "--output-dir", temp_dir]),
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-make", "--topic", "AI make", "--output-dir", temp_dir, "--ai-fallback", "local-render"],
+                ),
                 patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
                 patch("tools.sie_autoppt.cli.make_v2_ppt", side_effect=TimeoutError("timed out")),
                 patch(
@@ -190,6 +193,23 @@ class V2CliTests(unittest.TestCase):
             self.assertTrue(Path(lines[0]).exists())
             self.assertTrue(Path(lines[1]).exists())
             self.assertTrue(Path(lines[2]).exists())
+
+    def test_v2_make_timeout_fails_when_ai_fallback_is_disabled(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-make", "--topic", "AI make", "--output-dir", temp_dir, "--ai-fallback", "disabled"],
+                ),
+                patch("tools.sie_autoppt.cli.resolve_v2_clarified_context", return_value=RESOLVED_V2_CONTEXT),
+                patch("tools.sie_autoppt.cli.make_v2_ppt", side_effect=TimeoutError("timed out")),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as exc:
+                    cli.main()
+            self.assertEqual(exc.exception.code, 1)
+            self.assertIn("local fallback path is disabled", stderr.getvalue())
 
     def test_v2_make_passes_generation_mode_to_services(self):
         stdout = io.StringIO()
@@ -571,6 +591,21 @@ class V2CliTests(unittest.TestCase):
             )
             with (
                 patch("sys.argv", ["sie-autoppt", "v2-render", "--deck-json", str(semantic_path), "--output-dir", temp_dir]),
+                patch.dict("os.environ", {"SIE_AUTOPPT_ENFORCE_AI_FOR_PPT": "1"}, clear=False),
+                patch(
+                    "tools.sie_autoppt.cli.review_deck_once",
+                    return_value=type(
+                        "FakeReviewArtifacts",
+                        (),
+                        {
+                            "review_path": Path(temp_dir) / "review_once.json",
+                            "patch_path": Path(temp_dir) / "patches_review_once.json",
+                            "deck_path": Path(temp_dir) / "review_once.deck.json",
+                            "pptx_path": Path(temp_dir) / "review_once.pptx",
+                            "preview_dir": Path(temp_dir) / "previews_review_once",
+                        },
+                    )(),
+                ),
                 patch(
                     "tools.sie_autoppt.cli.generate_v2_ppt",
                     return_value=type(
@@ -585,6 +620,17 @@ class V2CliTests(unittest.TestCase):
                 ) as render_mock,
                 redirect_stdout(stdout),
             ):
+                (Path(temp_dir) / "review_once.deck.json").write_text(
+                    json.dumps(
+                        {
+                            "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                            "slides": [{"slide_id": "s1", "layout": "title_only", "title": "缁撹"}],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                (Path(temp_dir) / "patches_review_once.json").write_text('{"patches":[]}', encoding="utf-8")
                 cli.main()
 
         deck_arg = render_mock.call_args.args[0]
@@ -718,10 +764,80 @@ class V2CliTests(unittest.TestCase):
             )
             with (
                 patch("sys.argv", ["sie-autoppt", "v2-render", "--deck-json", str(semantic_path)]),
+                patch.dict("os.environ", {"SIE_AUTOPPT_ENFORCE_AI_FOR_PPT": "0"}, clear=False),
                 patch("tools.sie_autoppt.cli.generate_v2_ppt", side_effect=RuntimeError("render failed")),
             ):
                 with self.assertRaises(RuntimeError):
                     cli.main()
+
+    def test_v2_render_exits_when_ai_review_gate_fails(self):
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            semantic_path = Path(temp_dir) / "semantic.json"
+            semantic_path.write_text(
+                json.dumps(
+                    {
+                        "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "xx"}]}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-render", "--deck-json", str(semantic_path), "--ai-fallback", "disabled"],
+                ),
+                patch.dict("os.environ", {"SIE_AUTOPPT_ENFORCE_AI_FOR_PPT": "1"}, clear=False),
+                patch("tools.sie_autoppt.cli.review_deck_once", side_effect=RuntimeError("review failed")),
+                redirect_stderr(stderr),
+            ):
+                with self.assertRaises(SystemExit) as exc:
+                    cli.main()
+            self.assertEqual(exc.exception.code, 1)
+            self.assertIn("AI review/patch gate failed", stderr.getvalue())
+
+    def test_v2_render_ai_gate_failure_falls_back_to_local_render_when_enabled(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            semantic_path = Path(temp_dir) / "semantic.json"
+            semantic_path.write_text(
+                json.dumps(
+                    {
+                        "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                        "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "xx"}]}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "sys.argv",
+                    ["sie-autoppt", "v2-render", "--deck-json", str(semantic_path), "--ai-fallback", "local-render"],
+                ),
+                patch.dict("os.environ", {"SIE_AUTOPPT_ENFORCE_AI_FOR_PPT": "1"}, clear=False),
+                patch("tools.sie_autoppt.cli.review_deck_once", side_effect=RuntimeError("review failed")),
+                patch(
+                    "tools.sie_autoppt.cli.generate_v2_ppt",
+                    return_value=type(
+                        "FakeRenderArtifacts",
+                        (),
+                        {
+                            "rewrite_log_path": Path(temp_dir) / "rewrite_log.json",
+                            "warnings_path": Path(temp_dir) / "warnings.json",
+                            "output_path": Path(temp_dir) / "rendered.pptx",
+                        },
+                    )(),
+                ),
+                redirect_stdout(stdout),
+            ):
+                cli.main()
+
+            lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
+            self.assertEqual(len(lines), 4)
+            self.assertTrue(lines[3].endswith("rendered.pptx"))
 
     def test_v2_review_failure_surfaces_runtime_error(self):
         with (

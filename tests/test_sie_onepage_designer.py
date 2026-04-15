@@ -6,6 +6,7 @@ from pathlib import Path
 from pptx import Presentation
 
 from tools.scenario_generators.build_eu_supply_chain_compliance_slide import EU_BRIEF
+from tools.scenario_generators.build_onepage_from_json import load_brief_from_json
 from tools.scenario_generators.sie_onepage_designer import ACCENT, build_onepage_slide, resolve_reference_policy
 
 
@@ -61,6 +62,48 @@ class SieOnepageDesignerTests(unittest.TestCase):
             self.assertNotEqual(balanced_positions, signal_positions)
             self.assertNotEqual(summary_positions, balanced_positions)
             self.assertNotEqual(comparison_positions, signal_positions)
+
+    def test_summary_board_layout_is_shifted_up(self):
+        brief = replace(EU_BRIEF, variant="summary_board", layout_strategy="summary_board")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "summary_up.pptx"
+            built, _, _, _ = build_onepage_slide(brief, output_path=output)
+            prs = Presentation(built)
+            tops = [shape.top for shape in prs.slides[0].shapes if _shape_text(shape) == brief.right_title]
+            self.assertTrue(tops)
+            self.assertLessEqual(min(tops), 1700000)
+
+    def test_load_brief_from_utf8_json_preserves_cjk(self):
+        payload = {
+            "title": "中文标题测试",
+            "summary_fragments": [{"text": "当前共 43 项。"}],
+            "law_rows": [
+                {
+                    "number": "01",
+                    "title": "总体进展",
+                    "badge": "阶段结论",
+                    "badge_red": False,
+                    "runs": [{"text": "内容正常显示"}],
+                }
+            ],
+            "right_kicker": "STATUS",
+            "right_title": "中文副标题",
+            "process_steps": ["步骤1", "步骤2"],
+            "right_bullets": [{"label": "重点：", "body": "中文不应丢失"}],
+            "strategy_title": "策略标题",
+            "strategy_fragments": [{"text": "策略正文"}],
+            "footer": "FOOTER",
+            "page_no": "01",
+            "required_terms": ["中文标题测试", "步骤1"],
+            "layout_strategy": "status_dashboard",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "brief.json"
+            path.write_text(__import__("json").dumps(payload, ensure_ascii=False), encoding="utf-8")
+            brief = load_brief_from_json(path)
+            self.assertEqual(brief.title, "中文标题测试")
+            self.assertEqual(brief.right_title, "中文副标题")
+            self.assertEqual(brief.law_rows[0].runs[0].text, "内容正常显示")
 
 
 if __name__ == "__main__":
