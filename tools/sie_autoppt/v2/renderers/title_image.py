@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from ..schema import TitleImageSlide
-from ..theme_loader import ThemeSpec
 from .common import (
+    RenderContext,
     add_architecture_placeholder,
     add_blank_slide,
     add_bullet_list,
@@ -15,32 +15,52 @@ from .common import (
     fill_background,
     resolve_body_font_size,
 )
+from .layout_constants import TITLE_BAND, TITLE_IMAGE
 
 
-def render_title_image(prs, slide_data: TitleImageSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_title_image(ctx: RenderContext, slide_data: TitleImageSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
         slide,
-        left=0.78,
-        top=0.5,
-        width=11.7,
-        height=0.55,
+        left=TITLE_BAND.left,
+        top=TITLE_BAND.top,
+        width=TITLE_BAND.width,
+        height=TITLE_BAND.height,
         text=slide_data.title,
         font_name=theme.fonts.title,
         font_size=theme.font_sizes.title,
         color_hex=theme.colors.primary,
         bold=True,
     )
-    add_card(slide, 0.78, 1.32, 5.2, 4.85, theme)
-    add_card(slide, 6.2, 1.32, 6.3, 4.85, theme)
+    add_card(
+        slide,
+        TITLE_IMAGE.left_card.left,
+        TITLE_IMAGE.left_card.top,
+        TITLE_IMAGE.left_card.width,
+        TITLE_IMAGE.left_card.height,
+        theme,
+    )
+    add_card(
+        slide,
+        TITLE_IMAGE.right_card.left,
+        TITLE_IMAGE.right_card.top,
+        TITLE_IMAGE.right_card.width,
+        TITLE_IMAGE.right_card.height,
+        theme,
+    )
     add_bullet_list(
         slide,
         slide_data.content,
-        left=1.0,
-        top=1.65,
-        width=4.75,
-        height=4.1,
+        left=TITLE_IMAGE.content_left,
+        top=TITLE_IMAGE.content_top,
+        width=TITLE_IMAGE.content_width,
+        height=TITLE_IMAGE.content_height,
         theme=theme,
         font_size=resolve_body_font_size(theme, len(slide_data.content)),
     )
@@ -51,10 +71,10 @@ def render_title_image(prs, slide_data: TitleImageSlide, theme: ThemeSpec, log, 
             slide,
             caption=slide_data.image.caption,
             layers=list(slide_data.content),
-            left=6.45,
-            top=1.58,
-            width=5.8,
-            height=4.33,
+            left=TITLE_IMAGE.visual_left,
+            top=TITLE_IMAGE.visual_top,
+            width=TITLE_IMAGE.visual_width,
+            height=TITLE_IMAGE.visual_height,
             theme=theme,
         )
     elif slide_data.image.mode == "placeholder" and visual_type == "map":
@@ -63,10 +83,10 @@ def render_title_image(prs, slide_data: TitleImageSlide, theme: ThemeSpec, log, 
             slide,
             caption=slide_data.image.caption,
             nodes=list(slide_data.content),
-            left=6.45,
-            top=1.58,
-            width=5.8,
-            height=4.33,
+            left=TITLE_IMAGE.visual_left,
+            top=TITLE_IMAGE.visual_top,
+            width=TITLE_IMAGE.visual_width,
+            height=TITLE_IMAGE.visual_height,
             theme=theme,
         )
     else:
@@ -75,10 +95,10 @@ def render_title_image(prs, slide_data: TitleImageSlide, theme: ThemeSpec, log, 
             image_mode=slide_data.image.mode,
             image_path=slide_data.image.path,
             caption=slide_data.image.caption,
-            left=6.45,
-            top=1.58,
-            width=5.8,
-            height=4.33,
+            left=TITLE_IMAGE.visual_left,
+            top=TITLE_IMAGE.visual_top,
+            width=TITLE_IMAGE.visual_width,
+            height=TITLE_IMAGE.visual_height,
             theme=theme,
             log=log,
         )

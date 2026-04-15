@@ -1,19 +1,25 @@
 from __future__ import annotations
 
-from .common import add_blank_slide, add_card, add_page_number, add_textbox, fill_background, rgb
 from ..schema import MatrixGridSlide
-from ..theme_loader import ThemeSpec
+from .common import RenderContext, add_blank_slide, add_card, add_page_number, add_textbox, fill_background, rgb
+from .layout_constants import TITLE_BAND, resolve_matrix_grid_layout
 
 
-def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_matrix_grid(ctx: RenderContext, slide_data: MatrixGridSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
+    matrix_layout = resolve_matrix_grid_layout(theme)
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
         slide,
-        left=0.78,
-        top=0.5,
-        width=11.7,
-        height=0.55,
+        left=TITLE_BAND.left,
+        top=TITLE_BAND.top,
+        width=TITLE_BAND.width,
+        height=TITLE_BAND.height,
         text=slide_data.title,
         font_name=theme.fonts.title,
         font_size=theme.font_sizes.title,
@@ -23,10 +29,10 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
     if slide_data.heading:
         add_textbox(
             slide,
-            left=0.82,
-            top=1.05,
-            width=11.5,
-            height=0.28,
+            left=TITLE_BAND.subtitle_left,
+            top=matrix_layout.heading_top,
+            width=TITLE_BAND.subtitle_width,
+            height=TITLE_BAND.subtitle_height,
             text=slide_data.heading,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small + 1,
@@ -37,10 +43,10 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
     if slide_data.x_axis:
         add_textbox(
             slide,
-            left=5.3,
-            top=6.03,
-            width=2.6,
-            height=0.2,
+            left=matrix_layout.x_axis_left,
+            top=matrix_layout.x_axis_top,
+            width=matrix_layout.x_axis_width,
+            height=matrix_layout.x_axis_height,
             text=slide_data.x_axis,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small,
@@ -50,10 +56,10 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
     if slide_data.y_axis:
         add_textbox(
             slide,
-            left=0.84,
-            top=3.35,
-            width=0.9,
-            height=0.35,
+            left=matrix_layout.y_axis_left,
+            top=matrix_layout.y_axis_top,
+            width=matrix_layout.y_axis_width,
+            height=matrix_layout.y_axis_height,
             text=slide_data.y_axis,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small,
@@ -61,25 +67,26 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
             bold=True,
         )
 
-    add_card(slide, 1.55, 1.42, 10.95, 4.65, theme)
-    positions = [
-        (1.78, 1.68),
-        (7.08, 1.68),
-        (1.78, 4.01),
-        (7.08, 4.01),
-    ]
-    palette = ["#FFF4F4", "#FFF8EE", "#F5F9FF", "#EEF8F2"]
+    add_card(
+        slide,
+        matrix_layout.outer_card.left,
+        matrix_layout.outer_card.top,
+        matrix_layout.outer_card.width,
+        matrix_layout.outer_card.height,
+        theme,
+    )
 
     for index, cell in enumerate(slide_data.cells[:4]):
-        left, top = positions[index]
-        shape = add_card(slide, left, top, 5.14, 2.17, theme)
-        shape.fill.fore_color.rgb = rgb(palette[index % len(palette)])
+        left, top = matrix_layout.cell_positions[index]
+        shape = add_card(slide, left, top, matrix_layout.cell_width, matrix_layout.cell_height, theme)
+        role = matrix_layout.palette_roles[index % len(matrix_layout.palette_roles)]
+        shape.fill.fore_color.rgb = rgb(getattr(theme.colors, role))
         add_textbox(
             slide,
-            left=left + 0.14,
-            top=top + 0.14,
-            width=4.86,
-            height=0.3,
+            left=left + matrix_layout.card_title_left_padding,
+            top=top + matrix_layout.card_title_top_padding,
+            width=matrix_layout.card_title_width,
+            height=matrix_layout.card_title_height,
             text=cell.title,
             font_name=theme.fonts.title,
             font_size=theme.font_sizes.subtitle,
@@ -89,10 +96,10 @@ def render_matrix_grid(prs, slide_data: MatrixGridSlide, theme: ThemeSpec, log, 
         if cell.body:
             add_textbox(
                 slide,
-                left=left + 0.14,
-                top=top + 0.56,
-                width=4.86,
-                height=1.24,
+                left=left + matrix_layout.card_title_left_padding,
+                top=top + matrix_layout.card_body_top_offset,
+                width=matrix_layout.card_body_width,
+                height=matrix_layout.card_body_height,
                 text=cell.body,
                 font_name=theme.fonts.body,
                 font_size=theme.font_sizes.small + 1,

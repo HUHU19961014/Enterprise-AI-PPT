@@ -1,7 +1,13 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeAlias, TypedDict
-import json
+from typing import TypeAlias, TypedDict, cast
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class PayloadModel(BaseModel):
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
 
 class ProcessStepPayload(TypedDict):
@@ -149,7 +155,138 @@ class ClaimBreakdownPagePayload(TypedDict, total=False):
     summary: str
 
 
-BodyPagePayload: TypeAlias = (
+class ProcessStepModel(PayloadModel):
+    number: str = Field(min_length=1, max_length=20)
+    title: str = Field(min_length=1, max_length=80)
+    detail: str = Field(min_length=1, max_length=240)
+
+
+class ProcessFlowPageModel(PayloadModel):
+    steps: list[ProcessStepModel] = Field(min_length=1, max_length=10)
+
+
+class ArchitectureLayerModel(PayloadModel):
+    label: str = Field(min_length=1, max_length=20)
+    title: str = Field(min_length=1, max_length=80)
+    detail: str = Field(min_length=1, max_length=240)
+
+
+class SolutionArchitecturePageModel(PayloadModel):
+    layers: list[ArchitectureLayerModel] = Field(default_factory=list, max_length=10)
+    banner_text: str | None = Field(default=None, max_length=120)
+
+
+class GovernanceCardModel(PayloadModel):
+    label: str = Field(min_length=1, max_length=40)
+    detail: str = Field(min_length=1, max_length=240)
+
+
+class GovernancePageModel(PayloadModel):
+    cards: list[GovernanceCardModel] = Field(default_factory=list, max_length=10)
+    label_prefix: str | None = Field(default=None, max_length=20)
+    footer_text: str | None = Field(default=None, max_length=120)
+
+
+class ComparisonCardModel(PayloadModel):
+    title: str = Field(min_length=1, max_length=80)
+    detail: str = Field(min_length=1, max_length=240)
+
+
+class ComparisonUpgradePageModel(PayloadModel):
+    headline: str | None = Field(default=None, max_length=120)
+    left_label: str | None = Field(default=None, max_length=40)
+    right_label: str | None = Field(default=None, max_length=40)
+    left_cards: list[ComparisonCardModel] = Field(default_factory=list, max_length=8)
+    right_cards: list[ComparisonCardModel] = Field(default_factory=list, max_length=8)
+    center_kicker: str | None = Field(default=None, max_length=60)
+    center_title: str | None = Field(default=None, max_length=80)
+    center_subtitle: str | None = Field(default=None, max_length=120)
+
+
+class CapabilityRingItemModel(PayloadModel):
+    title: str = Field(min_length=1, max_length=80)
+    detail: str = Field(min_length=1, max_length=240)
+
+
+class CapabilityRingPageModel(PayloadModel):
+    items: list[CapabilityRingItemModel] = Field(default_factory=list, max_length=10)
+    headline: str | None = Field(default=None, max_length=120)
+
+
+class FivePhaseStageModel(PayloadModel):
+    header: str = Field(min_length=1, max_length=60)
+    tasks: list[str] = Field(min_length=1, max_length=8)
+
+
+class FivePhasePathPageModel(PayloadModel):
+    intro: str = Field(min_length=1, max_length=240)
+    stages: list[FivePhaseStageModel] = Field(min_length=1, max_length=6)
+    legend: list[str] = Field(default_factory=list, max_length=6)
+
+
+class PainCardModel(PayloadModel):
+    title: str | None = Field(default=None, max_length=80)
+    detail: str | None = Field(default=None, max_length=240)
+    points: list[str] = Field(default_factory=list, max_length=8)
+
+
+class PainCardsPageModel(PayloadModel):
+    lead: str | None = Field(default=None, max_length=140)
+    bottom_banner: str | None = Field(default=None, max_length=140)
+    cards: list[PainCardModel] = Field(default_factory=list, max_length=8)
+
+
+class RoadmapStageModel(PayloadModel):
+    period: str | None = Field(default=None, max_length=30)
+    title: str | None = Field(default=None, max_length=80)
+    detail: str | None = Field(default=None, max_length=240)
+
+
+class RoadmapTimelinePageModel(PayloadModel):
+    headline: str | None = Field(default=None, max_length=120)
+    footer: str | None = Field(default=None, max_length=140)
+    stages: list[RoadmapStageModel] = Field(default_factory=list, max_length=8)
+
+
+class KpiMetricModel(PayloadModel):
+    label: str | None = Field(default=None, max_length=60)
+    value: str | None = Field(default=None, max_length=60)
+    detail: str | None = Field(default=None, max_length=140)
+
+
+class KpiDashboardPageModel(PayloadModel):
+    headline: str | None = Field(default=None, max_length=120)
+    footer: str | None = Field(default=None, max_length=140)
+    metrics: list[KpiMetricModel] = Field(default_factory=list, max_length=10)
+    insights: list[str] = Field(default_factory=list, max_length=8)
+
+
+class RiskItemModel(PayloadModel):
+    title: str | None = Field(default=None, max_length=80)
+    detail: str | None = Field(default=None, max_length=240)
+    quadrant: str | None = Field(default=None, max_length=30)
+
+
+class RiskMatrixPageModel(PayloadModel):
+    headline: str | None = Field(default=None, max_length=120)
+    footer: str | None = Field(default=None, max_length=140)
+    items: list[RiskItemModel] = Field(default_factory=list, max_length=10)
+
+
+class ClaimItemModel(PayloadModel):
+    label: str | None = Field(default=None, max_length=80)
+    value: str | None = Field(default=None, max_length=60)
+    detail: str | None = Field(default=None, max_length=240)
+
+
+class ClaimBreakdownPageModel(PayloadModel):
+    headline: str | None = Field(default=None, max_length=120)
+    footer: str | None = Field(default=None, max_length=140)
+    claims: list[ClaimItemModel] = Field(default_factory=list, max_length=10)
+    summary: str | None = Field(default=None, max_length=200)
+
+
+LegacyBodyPagePayload: TypeAlias = (
     SolutionArchitecturePagePayload
     | ProcessFlowPagePayload
     | GovernancePagePayload
@@ -163,6 +300,48 @@ BodyPagePayload: TypeAlias = (
     | ClaimBreakdownPagePayload
     | dict[str, object]
 )
+
+# Phase-2 migration default: treat runtime payload as dict and validate via `validate_body_page_payload`.
+BodyPagePayload: TypeAlias = dict[str, object]
+
+BodyPagePayloadModel: TypeAlias = (
+    SolutionArchitecturePageModel
+    | ProcessFlowPageModel
+    | GovernancePageModel
+    | ComparisonUpgradePageModel
+    | CapabilityRingPageModel
+    | FivePhasePathPageModel
+    | PainCardsPageModel
+    | RoadmapTimelinePageModel
+    | KpiDashboardPageModel
+    | RiskMatrixPageModel
+    | ClaimBreakdownPageModel
+)
+
+
+_BODY_PAYLOAD_MODEL_MAP: dict[str, type[PayloadModel]] = {
+    "solution_architecture": SolutionArchitecturePageModel,
+    "process_flow": ProcessFlowPageModel,
+    "governance": GovernancePageModel,
+    "comparison_upgrade": ComparisonUpgradePageModel,
+    "capability_ring": CapabilityRingPageModel,
+    "five_phase_path": FivePhasePathPageModel,
+    "pain_cards": PainCardsPageModel,
+    "roadmap_timeline": RoadmapTimelinePageModel,
+    "kpi_dashboard": KpiDashboardPageModel,
+    "risk_matrix": RiskMatrixPageModel,
+    "claim_breakdown": ClaimBreakdownPageModel,
+}
+
+
+def validate_body_page_payload(pattern_id: str, payload: object) -> BodyPagePayloadModel | dict[str, object]:
+    model_cls = _BODY_PAYLOAD_MODEL_MAP.get(str(pattern_id or "").strip())
+    if model_cls is None:
+        if isinstance(payload, dict):
+            return payload
+        return {}
+    data = payload if isinstance(payload, dict) else {}
+    return cast(BodyPagePayloadModel, model_cls.model_validate(data))
 
 
 @dataclass(frozen=True)

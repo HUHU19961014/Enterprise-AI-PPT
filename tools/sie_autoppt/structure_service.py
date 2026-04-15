@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import asyncio
+from dataclasses import dataclass
 from typing import Any
 
 from .clarifier import DEFAULT_AUDIENCE_HINT
@@ -8,7 +9,6 @@ from .config import MAX_BODY_CHAPTERS
 from .llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from .models import StructureSpec
 from .prompting import render_prompt_template
-
 
 STRUCTURE_TYPE_ENUM = (
     "industry_analysis",
@@ -243,3 +243,40 @@ def generate_structure_with_ai(
         feedback = validation.issues
 
     raise ValueError("Structure generation failed validation after 3 attempts: " + "; ".join(feedback))
+
+
+async def generate_structures_with_ai_batch(
+    requests: list[StructureGenerationRequest],
+    *,
+    model: str | None = None,
+    concurrency: int = 4,
+) -> list[StructureGenerationResult]:
+    if not requests:
+        return []
+    config = load_openai_responses_config(model=model)
+    client = OpenAIResponsesClient(config)
+    bounded = max(1, int(concurrency))
+    semaphore = asyncio.Semaphore(bounded)
+    results: list[StructureGenerationResult | None] = [None] * len(requests)
+
+    async def _run(index: int, request: StructureGenerationRequest) -> None:
+        bounds = resolve_structure_bounds(request)
+        developer_prompt, user_prompt = build_structure_prompts(request, bounds=bounds)
+        async with semaphore:
+            payload = await client.acreate_structured_json(
+                developer_prompt=developer_prompt,
+                user_prompt=user_prompt,
+                schema_name="structure_plan",
+                schema=build_structure_schema(bounds),
+            )
+        validation = validate_structure_payload(payload)
+        if not validation.is_valid:
+            raise ValueError(f"structure batch item {index} failed validation: {'; '.join(validation.issues)}")
+        results[index] = StructureGenerationResult(
+            structure=StructureSpec.from_dict(payload),
+            attempts_used=1,
+            validation_issues=validation.issues,
+        )
+
+    await asyncio.gather(*(_run(index, request) for index, request in enumerate(requests)))
+    return [item for item in results if item is not None]

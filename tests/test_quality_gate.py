@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pytest
+from tools.sie_autoppt.v2 import quality_checks as quality_checks_module
 
 from tools.sie_autoppt.v2.quality_checks import (
     WARNING_LEVEL_ERROR,
@@ -10,6 +11,11 @@ from tools.sie_autoppt.v2.quality_checks import (
     count_errors,
     count_by_level,
     quality_gate,
+)
+from tools.sie_autoppt.v2.rule_config import (
+    BulletRuleConfig,
+    TitleLengthRuleConfig,
+    V2RuleConfig,
 )
 from tools.sie_autoppt.v2.schema import (
     ColumnBlock,
@@ -26,6 +32,97 @@ from tools.sie_autoppt.v2.schema import (
 
 
 class TestQualityGate:
+    def test_title_length_thresholds_follow_rule_config(self, monkeypatch):
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=TitleLengthRuleConfig(error_threshold=18, high_threshold=16, warning_threshold=14),
+            bullets=quality_checks_module.RULE_CONFIG.bullets,
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TitleContentSlide(
+            slide_id="s1",
+            layout="title_content",
+            title="啊" * 17,
+            content=["test"],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        title_warnings = [w for w in warnings if "title contains" in w.message]
+        assert len(title_warnings) == 1
+        assert title_warnings[0].warning_level == WARNING_LEVEL_HIGH
+
+    def test_bullet_count_thresholds_follow_rule_config(self, monkeypatch):
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=quality_checks_module.RULE_CONFIG.title_lengths,
+            bullets=BulletRuleConfig(
+                min_items=1,
+                max_items=5,
+                recommended_min_items=2,
+                recommended_max_items=4,
+            ),
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TitleContentSlide(
+            slide_id="s1",
+            layout="title_content",
+            title="Test",
+            content=["a", "b", "c", "d", "e"],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        bullet_warnings = [w for w in warnings if "bullet items" in w.message]
+        assert len(bullet_warnings) == 1
+        assert bullet_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
+    def test_timeline_stage_threshold_follows_rule_config(self, monkeypatch):
+        custom_thresholds = quality_checks_module.RULE_CONFIG.content_thresholds
+        custom_thresholds = custom_thresholds.__class__(
+            **{
+                **custom_thresholds.__dict__,
+                "timeline_max_stages": 3,
+            }
+        )
+        custom_rules = V2RuleConfig(
+            rewrite=quality_checks_module.RULE_CONFIG.rewrite,
+            directory_style=quality_checks_module.RULE_CONFIG.directory_style,
+            scoring=quality_checks_module.RULE_CONFIG.scoring,
+            title_lengths=quality_checks_module.RULE_CONFIG.title_lengths,
+            bullets=quality_checks_module.RULE_CONFIG.bullets,
+            content_thresholds=custom_thresholds,
+        )
+        monkeypatch.setattr(quality_checks_module, "RULE_CONFIG", custom_rules)
+
+        slide = TimelineSlide(
+            slide_id="s1",
+            layout="timeline",
+            title="实施路线",
+            stages=[{"title": "Q1"}, {"title": "Q2"}, {"title": "Q3"}, {"title": "Q4"}],
+        )
+        warnings = check_deck_content(
+            DeckDocument(
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
+                slides=[slide],
+            )
+        )
+        stage_warnings = [w for w in warnings if "timeline has" in w.message]
+        assert len(stage_warnings) == 1
+        assert stage_warnings[0].warning_level == WARNING_LEVEL_WARNING
+
     def test_title_length_thresholds(self):
         """Test that title length triggers appropriate warning levels."""
         # 20 chars: no warning
@@ -37,7 +134,7 @@ class TestQualityGate:
         )
         warnings_20 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_20],
             )
         )
@@ -52,7 +149,7 @@ class TestQualityGate:
         )
         warnings_22 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_22],
             )
         )
@@ -69,7 +166,7 @@ class TestQualityGate:
         )
         warnings_26 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_26],
             )
         )
@@ -86,7 +183,7 @@ class TestQualityGate:
         )
         warnings_30 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_30],
             )
         )
@@ -104,13 +201,13 @@ class TestQualityGate:
         )
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide],
             )
         )
         directory_warnings = [w for w in warnings if "directory-style" in w.message]
         assert len(directory_warnings) == 1
-        assert directory_warnings[0].warning_level == WARNING_LEVEL_WARNING
+        assert directory_warnings[0].warning_level == WARNING_LEVEL_ERROR
 
     def test_bullet_length_thresholds(self):
         """Test that bullet length triggers appropriate warning levels."""
@@ -123,7 +220,7 @@ class TestQualityGate:
         )
         warnings_35 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_35],
             )
         )
@@ -139,7 +236,7 @@ class TestQualityGate:
         )
         warnings_40 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_40],
             )
         )
@@ -156,7 +253,7 @@ class TestQualityGate:
         )
         warnings_55 = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide_55],
             )
         )
@@ -168,7 +265,7 @@ class TestQualityGate:
         """Test that deck structure is validated."""
         # Good structure: section_break first, title_only last
         good_deck = DeckDocument(
-            meta=ThemeMeta(title="Test", theme="business_red"),
+            meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
             slides=[
                 SectionBreakSlide(slide_id="s1", layout="section_break", title="Start", subtitle="Begin"),
                 TitleContentSlide(slide_id="s2", layout="title_content", title="Middle", content=["test"]),
@@ -181,7 +278,7 @@ class TestQualityGate:
 
         # Bad structure: title_content first and last
         bad_deck = DeckDocument(
-            meta=ThemeMeta(title="Test", theme="business_red"),
+            meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
             slides=[
                 TitleContentSlide(slide_id="s1", layout="title_content", title="Start", content=["test"]),
                 TitleContentSlide(slide_id="s2", layout="title_content", title="End", content=["test"]),
@@ -201,7 +298,7 @@ class TestQualityGate:
         )
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide],
             )
         )
@@ -220,7 +317,7 @@ class TestQualityGate:
         )
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide],
             )
         )
@@ -232,7 +329,7 @@ class TestQualityGate:
     def test_quality_gate_requires_review_for_high_only(self):
         gate_result = quality_gate(
             {
-                "meta": {"title": "Test", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "meta": {"title": "Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
                 "slides": [
                     {
                         "slide_id": "s1",
@@ -248,10 +345,31 @@ class TestQualityGate:
         assert gate_result.summary["high_count"] == 1
         assert gate_result.summary["error_count"] == 0
 
+    def test_quality_gate_exposes_blocking_and_soft_issue_statistics(self):
+        gate_result = quality_gate(
+            {
+                "meta": {"title": "Test", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "slides": [
+                    {
+                        "slide_id": "s1",
+                        "layout": "title_content",
+                        "title": "娴" * 26,
+                        "content": ["test"],
+                    }
+                ],
+            }
+        )
+
+        assert gate_result.blocking is False
+        assert gate_result.soft_issue_count >= 1
+        payload = gate_result.to_dict()
+        assert payload["blocking"] is False
+        assert payload["statistics"]["soft_issue_count"] == gate_result.soft_issue_count
+
     def test_quality_gate_blocks_schema_errors(self):
         gate_result = quality_gate(
             {
-                "meta": {"title": "", "theme": "business_red", "language": "zh-CN", "author": "AI", "version": "2.0"},
+                "meta": {"title": "", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
                 "slides": [],
             }
         )
@@ -269,7 +387,7 @@ class TestQualityGate:
         )
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide],
             )
         )
@@ -280,7 +398,7 @@ class TestQualityGate:
     def test_stats_dashboard_without_data_source_requires_review(self):
         gate_result = quality_gate(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     StatsDashboardSlide(
                         slide_id="s1",
@@ -309,7 +427,7 @@ class TestQualityGate:
         )
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[slide],
             )
         )
@@ -320,7 +438,7 @@ class TestQualityGate:
     def test_generic_background_opening_triggers_high_warning(self):
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     TitleOnlySlide(slide_id="s1", layout="title_only", title="项目背景"),
                     TitleOnlySlide(slide_id="s2", layout="title_only", title="建议先聚焦一条主链"),
@@ -335,7 +453,7 @@ class TestQualityGate:
     def test_generic_thanks_closing_triggers_high_warning(self):
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     SectionBreakSlide(slide_id="s1", layout="section_break", title="结论先行", subtitle="先打通关键链路"),
                     TitleOnlySlide(slide_id="s2", layout="title_only", title="谢谢"),
@@ -350,7 +468,7 @@ class TestQualityGate:
     def test_last_slide_without_action_or_decision_triggers_warning(self):
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     SectionBreakSlide(slide_id="s1", layout="section_break", title="结论先行", subtitle="先打通关键链路"),
                     TitleContentSlide(slide_id="s2", layout="title_content", title="现状分析", content=["问题一", "问题二"]),
@@ -365,7 +483,7 @@ class TestQualityGate:
     def test_repeated_adjacent_content_triggers_warning(self):
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     TitleContentSlide(
                         slide_id="s1",
@@ -390,7 +508,7 @@ class TestQualityGate:
     def test_repeated_title_triggers_warning(self):
         warnings = check_deck_content(
             DeckDocument(
-                meta=ThemeMeta(title="Test", theme="business_red"),
+                meta=ThemeMeta(title="Test", theme="sie_consulting_fixed"),
                 slides=[
                     TitleOnlySlide(slide_id="s1", layout="title_only", title="实施路径"),
                     TimelineSlide(
@@ -406,3 +524,4 @@ class TestQualityGate:
         title_repeat_warnings = [w for w in warnings if "title repeats an earlier page" in w.message]
         assert len(title_repeat_warnings) == 1
         assert title_repeat_warnings[0].warning_level == WARNING_LEVEL_WARNING
+

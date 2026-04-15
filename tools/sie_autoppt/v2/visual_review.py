@@ -1,62 +1,112 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
+from ..plugins import resolve_model_adapter
 from .io import is_semantic_deck_document, load_deck_document, load_semantic_document, write_deck_document, write_semantic_document
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import QualityGateResult, quality_gate
 from .schema import DeckDocument, validate_deck_payload
 
+try:
+    from jsonpath_ng.ext import parse as jsonpath_parse
+except Exception:  # pragma: no cover - optional dependency fallback
+    jsonpath_parse = None
+
 RATING_LABELS = ("优秀", "合格", "可用初稿", "质量偏弱", "不合格")
-REVIEW_SCORECARD_TEXT = """
-请按以下 5 个维度对整套 PPT 进行评分，每项 1-5 分：
 
-1. structure：结构与页数合理性
-- 5分：结构成熟、节奏自然、适合正式汇报
-- 3分：基本完整，但有 1-2 页作用重复或节奏偏平
-- 1分：结构混乱，页数明显失衡
 
-2. title_quality：标题自然度
-- 5分：标题结论导向明确，接近高质量人工写法，中文 <= 20 字
-- 3分：基本自然，有少量生硬表达或目录化标题
-- 1分：多数标题像机器生成，或大量目录化措辞
+@dataclass(frozen=True)
+class ReviewDimensionDefinition:
+    key: str
+    label: str
+    description: str
+    high_score: str
+    low_score: str
 
-3. content_density：内容密度与表达质量
-- 5分：每页通常 3-4 条 bullet，精炼，支持高效汇报
-- 3分：整体可接受，但有几页需要压缩
-- 1分：内容过密，阅读负担重
 
-4. layout_stability：版式稳定性与溢出风险
-- 5分：无明显溢出、压叠、错位
-- 3分：有 1-2 页轻微排版问题
-- 1分：多页明显异常，无法交付
-视觉检查重点：
-- 文字是否溢出边界
-- 图文是否压叠
-- 字体是否过小（正文建议 >= 16pt）
-- 背景与文字对比度是否足够
-- 目录页序号/标题是否对齐
+BASELINE_REVIEW_DIMENSIONS = (
+    ReviewDimensionDefinition("structure", "结构完整性", "结构与页数合理性、节奏自然度", "结构成熟、节奏自然、适合正式汇报", "结构混乱、页数明显失衡"),
+    ReviewDimensionDefinition("title_quality", "标题质量", "标题是否结论导向、自然、非目录化", "标题结论导向明确，中文 <= 20 字", "多数标题像机器生成，或大量目录化措辞"),
+    ReviewDimensionDefinition("content_density", "内容密度", "内容密度与表达质量", "每页通常 3-4 条 bullet，精炼，支持高效汇报", "内容过密或过疏，阅读负担重"),
+    ReviewDimensionDefinition("layout_stability", "布局稳定性", "版式稳定性与溢出风险", "无明显溢出、压叠、错位", "多页明显异常，无法交付"),
+    ReviewDimensionDefinition("deliverability", "可交付性", "整体是否达到交付水平", "基本达到正式交付水平", "需要大幅重写"),
+)
+EXTENDED_REVIEW_DIMENSIONS = BASELINE_REVIEW_DIMENSIONS + (
+    ReviewDimensionDefinition("brand_consistency", "品牌一致性", "配色、字体、视觉语言是否统一", "配色字体符合主题规范，风格稳定", "风格混乱，像多套模板拼接"),
+    ReviewDimensionDefinition("data_visualization", "数据可视化", "指标、图表、数据呈现是否清晰专业", "数据表达清楚，有来源意识，视觉编码恰当", "数据堆砌或图表含义不清"),
+    ReviewDimensionDefinition("info_hierarchy", "信息层级", "重点、主次和阅读路径是否清晰", "核心信息突出，层级清楚", "信息层级模糊，读者难以抓重点"),
+    ReviewDimensionDefinition("audience_fit", "受众适配", "内容深度、措辞和节奏是否适合目标受众", "符合目标受众阅读习惯和决策场景", "受众错配，体验差"),
+)
+VISUAL_REVIEW_DIMENSIONS = EXTENDED_REVIEW_DIMENSIONS
+DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC = 120
 
-5. deliverability：可交付水平
-- 5分：基本达到正式交付水平
-- 3分：可作为初稿，需要较多润色
-- 1分：需要大幅重写
 
-输出 JSON 时必须：
-- total 为五项分数求和
-- rating 仅允许：优秀 / 合格 / 可用初稿 / 质量偏弱 / 不合格
-- page_issues 只写具体页问题，page 从 1 开始
-- blocker 表示已经影响交付或必须进入自动修复
-- warning 表示仍可继续人工润色
-- summary 用 2-3 句中文概括整体判断
-""".strip()
+class StructuredJsonProvider(Protocol):
+    def create_structured_json_with_user_items(self, **kwargs) -> dict[str, Any]:
+        ...
+
+
+class OpenAIVisualReviewProvider:
+    def __init__(self, model: str | None = None):
+        adapter_name = str(
+            os.environ.get("SIE_AUTOPPT_VISION_MODEL_ADAPTER", "") or os.environ.get("SIE_AUTOPPT_MODEL_ADAPTER", "")
+        ).strip().lower()
+        if adapter_name:
+            adapter_factory = resolve_model_adapter(adapter_name)
+            if adapter_factory is None:
+                raise ValueError(f"Unknown model adapter for visual review: {adapter_name}")
+            self.client = adapter_factory(model)
+        else:
+            self.client = OpenAIResponsesClient(load_openai_responses_config(model=model))
+
+    def create_structured_json_with_user_items(self, **kwargs) -> dict[str, Any]:
+        return self.client.create_structured_json_with_user_items(**kwargs)
+
+
+def _build_review_scorecard_text(dimensions: tuple[ReviewDimensionDefinition, ...] = VISUAL_REVIEW_DIMENSIONS) -> str:
+    lines = [f"请按以下 {len(dimensions)} 个维度对整套 PPT 进行评分，每项 1-5 分：", ""]
+    for index, dimension in enumerate(dimensions, start=1):
+        lines.extend(
+            [
+                f"{index}. {dimension.key}：{dimension.label}",
+                f"- 评估重点：{dimension.description}",
+                f"- 5分：{dimension.high_score}",
+                f"- 1分：{dimension.low_score}",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "视觉检查重点：",
+            "- 文字是否溢出边界",
+            "- 图文是否压叠",
+            "- 字体是否过小（正文建议 >= 16pt）",
+            "- 背景与文字对比度是否足够",
+            "- 目录页序号/标题是否对齐",
+            "",
+            "输出 JSON 时必须：",
+            f"- total 为 {len(dimensions)} 项分数求和",
+            "- rating 仅允许：优秀 / 合格 / 可用初稿 / 质量偏弱 / 不合格",
+            "- page_issues 只写具体页问题，page 从 1 开始",
+            "- blocker 表示已经影响交付或必须进入自动修复",
+            "- warning 表示仍可继续人工润色",
+            "- summary 用 2-3 句中文概括整体判断",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+REVIEW_SCORECARD_TEXT = _build_review_scorecard_text()
 PATCH_WORKFLOW_TEXT = """
 根据刚才的评审结果，请仅针对 blocker 级别的问题生成 DeckSpec JSON 修复 Patch。
 
@@ -97,23 +147,20 @@ class SingleReviewArtifacts:
     preview_mode: str = "content_only"
 
 
-def build_visual_review_schema() -> dict[str, Any]:
+def build_visual_review_schema(
+    dimensions: tuple[ReviewDimensionDefinition, ...] = VISUAL_REVIEW_DIMENSIONS,
+) -> dict[str, Any]:
+    score_properties = {dimension.key: {"type": "integer", "minimum": 1, "maximum": 5} for dimension in dimensions}
     return {
         "type": "object",
         "properties": {
             "scores": {
                 "type": "object",
-                "properties": {
-                    "structure": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "title_quality": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "content_density": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "layout_stability": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "deliverability": {"type": "integer", "minimum": 1, "maximum": 5},
-                },
-                "required": ["structure", "title_quality", "content_density", "layout_stability", "deliverability"],
+                "properties": score_properties,
+                "required": list(score_properties),
                 "additionalProperties": False,
             },
-            "total": {"type": "integer", "minimum": 5, "maximum": 25},
+            "total": {"type": "integer", "minimum": len(dimensions), "maximum": len(dimensions) * 5},
             "rating": {"type": "string", "enum": list(RATING_LABELS)},
             "page_issues": {
                 "type": "array",
@@ -122,7 +169,7 @@ def build_visual_review_schema() -> dict[str, Any]:
                     "properties": {
                         "page": {"type": "integer", "minimum": 1, "maximum": 50},
                         "level": {"type": "string", "enum": ["blocker", "warning"]},
-                        "dimension": {"type": "string", "enum": ["structure", "title", "content", "layout", "delivery"]},
+                        "dimension": {"type": "string", "enum": [dimension.key for dimension in dimensions]},
                         "issue": {"type": "string", "minLength": 2, "maxLength": 120},
                         "suggestion": {"type": "string", "minLength": 2, "maxLength": 120},
                     },
@@ -186,16 +233,15 @@ def _patch_developer_prompt() -> str:
     )
 
 
-def _score_rating(total: int) -> str:
-    # Visual review uses five dimensions with a 1-5 score each, so the rating
-    # thresholds stay on the same 5-25 scale instead of mirroring quality_gate.
-    if total >= 21:
+def _score_rating(total: int, *, max_score: int = 25) -> str:
+    ratio = total / max(max_score, 1)
+    if ratio >= 0.84:
         return "优秀"
-    if total >= 16:
+    if ratio >= 0.64:
         return "合格"
-    if total >= 11:
+    if ratio >= 0.44:
         return "可用初稿"
-    if total >= 6:
+    if ratio >= 0.24:
         return "质量偏弱"
     return "不合格"
 
@@ -220,23 +266,31 @@ def export_slide_previews(pptx_path: Path, output_dir: Path) -> list[Path]:
             "$pres.Close();"
             "$ppt.Quit();"
         )
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script, str(pptx_path), str(output_dir)],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script, str(pptx_path), str(output_dir)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
     else:
         if shutil.which("soffice") is None:
             return []
-        result = subprocess.run(
-            ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["soffice", "--headless", "--convert-to", "png", "--outdir", str(output_dir), str(pptx_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Failed to export slide previews: timed out after {DEFAULT_PREVIEW_EXPORT_TIMEOUT_SEC}s") from exc
         if result.returncode != 0:
             raise RuntimeError(f"Failed to export slide previews: {(result.stderr or result.stdout).strip()}")
 
@@ -322,7 +376,7 @@ def _build_review_user_items(
         {
             "type": "text",
             "text": (
-                "请严格按照既定五维评分标准评审这套 PPT。下面先给出 DeckSpec JSON：\n"
+                f"请严格按照既定 {len(VISUAL_REVIEW_DIMENSIONS)} 维评分标准评审这套 PPT。下面先给出 DeckSpec JSON：\n"
                 + json.dumps(deck.model_dump(mode="json"), ensure_ascii=False, indent=2)
                 + "\n\n"
                 + quality_gate_note
@@ -338,17 +392,30 @@ def _build_review_user_items(
     return items
 
 
+def _normalize_visual_scores(scores: Any) -> dict[str, int]:
+    source = scores if isinstance(scores, dict) else {}
+    normalized: dict[str, int] = {}
+    for dimension in VISUAL_REVIEW_DIMENSIONS:
+        try:
+            value = int(source.get(dimension.key, 3))
+        except (TypeError, ValueError):
+            value = 3
+        normalized[dimension.key] = min(5, max(1, value))
+    return normalized
+
+
 def review_rendered_deck(
     deck: DeckDocument,
     previews: list[Path],
     *,
     model: str | None = None,
     preview_note: str | None = None,
+    provider: StructuredJsonProvider | None = None,
 ) -> dict[str, Any]:
-    client = OpenAIResponsesClient(load_openai_responses_config(model=model))
+    active_provider = provider or OpenAIVisualReviewProvider(model=model)
     gate_result = quality_gate(deck)
     preview_mode = _resolve_preview_mode(previews)
-    result = client.create_structured_json_with_user_items(
+    result = active_provider.create_structured_json_with_user_items(
         developer_prompt=_review_developer_prompt(),
         user_items=_build_review_user_items(
             deck,
@@ -359,10 +426,11 @@ def review_rendered_deck(
         schema_name="ppt_visual_review",
         schema=build_visual_review_schema(),
     )
-    scores = result["scores"]
-    total = sum(int(scores[key]) for key in ("structure", "title_quality", "content_density", "layout_stability", "deliverability"))
+    scores = _normalize_visual_scores(result.get("scores", {}))
+    total = sum(scores.values())
+    result["scores"] = scores
     result["total"] = total
-    result["rating"] = _score_rating(total)
+    result["rating"] = _score_rating(total, max_score=len(VISUAL_REVIEW_DIMENSIONS) * 5)
     result["preview_mode"] = preview_mode
     result["summary"] = _merge_summary_note(str(result.get("summary", "")), preview_note)
     return result
@@ -377,12 +445,13 @@ def generate_blocker_patches(
     review_result: dict[str, Any],
     *,
     model: str | None = None,
+    provider: StructuredJsonProvider | None = None,
 ) -> dict[str, Any]:
     blockers = _blocker_issues(review_result)
     if not blockers:
         return {"patches": []}
 
-    client = OpenAIResponsesClient(load_openai_responses_config(model=model))
+    active_provider = provider or OpenAIVisualReviewProvider(model=model)
     user_items = [
         {
             "type": "text",
@@ -395,7 +464,7 @@ def generate_blocker_patches(
             ),
         }
     ]
-    return client.create_structured_json_with_user_items(
+    return active_provider.create_structured_json_with_user_items(
         developer_prompt=_patch_developer_prompt(),
         user_items=user_items,
         schema_name="ppt_repair_patches",
@@ -404,11 +473,17 @@ def generate_blocker_patches(
 
 
 def _parse_field_path(path: str) -> list[str | int]:
+    normalized = path.strip()
+    if normalized.startswith("$."):
+        normalized = normalized[2:]
+    elif normalized == "$":
+        normalized = ""
+
     tokens: list[str | int] = []
     buffer = ""
     index_buffer = ""
     in_index = False
-    for char in path:
+    for char in normalized:
         if char == "." and not in_index:
             if buffer:
                 tokens.append(buffer)
@@ -434,14 +509,38 @@ def _parse_field_path(path: str) -> list[str | int]:
         else:
             buffer += char
     if in_index:
-        raise ValueError(f"Unclosed list index in field path: {path}")
+        raise ValueError(f"Unclosed list index in field path: {normalized or path}")
     if buffer:
         tokens.append(buffer)
     return tokens
 
 
-def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: int) -> tuple[Any, str | int, Any]:
-    tokens = _parse_field_path(path)
+def _normalize_patch_jsonpath(path: str, patch_number: int) -> tuple[str, int]:
+    raw_path = path.strip()
+    if not raw_path:
+        raise ValueError(f"Patch {patch_number} field path must not be empty.")
+    normalized = raw_path if raw_path.startswith("$") else f"$.{raw_path}"
+    slide_match = re.match(r"^\$\.slides\[(\d+)\](?:\.|$)", normalized)
+    if not slide_match:
+        raise ValueError(f"Patch {patch_number} must target a slide field under slides[n].")
+    return normalized, int(slide_match.group(1))
+
+
+def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: int) -> tuple[str, int, Any]:
+    normalized_path, slide_index = _normalize_patch_jsonpath(path, patch_number)
+    if jsonpath_parse is not None:
+        try:
+            expression = jsonpath_parse(normalized_path)
+        except Exception as exc:
+            raise ValueError(f"Patch {patch_number} points to an invalid field path: {path}") from exc
+        matches = expression.find(payload)
+        if not matches:
+            raise ValueError(f"Patch {patch_number} points to an invalid final field: {path}")
+        if len(matches) != 1:
+            raise ValueError(f"Patch {patch_number} field path must resolve to exactly one value: {path}")
+        return normalized_path, slide_index, matches[0].value
+
+    tokens = _parse_field_path(normalized_path)
     if not tokens:
         raise ValueError(f"Patch {patch_number} field path must not be empty.")
     if len(tokens) < 2 or tokens[0] != "slides" or not isinstance(tokens[1], int):
@@ -459,16 +558,15 @@ def _resolve_patch_reference(payload: dict[str, Any], path: str, patch_number: i
         current_value = cursor[final_token]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Patch {patch_number} points to an invalid final field: {path}") from exc
-    return cursor, final_token, current_value
+    return normalized_path, slide_index, current_value
 
 
 def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocument:
     payload = deck.model_dump(mode="json")
     for patch_number, patch in enumerate(patch_set.get("patches", []), start=1):
         path = str(patch["field"]).strip()
-        cursor, final_token, current_value = _resolve_patch_reference(payload, path, patch_number)
+        normalized_path, slide_index, current_value = _resolve_patch_reference(payload, path, patch_number)
         expected_page = patch.get("page")
-        slide_index = _parse_field_path(path)[1]
         if isinstance(expected_page, int) and expected_page != slide_index + 1:
             raise ValueError(
                 f"Patch {patch_number} page={expected_page} does not match field path slide index {slide_index + 1}."
@@ -477,7 +575,15 @@ def apply_patch_set(deck: DeckDocument, patch_set: dict[str, Any]) -> DeckDocume
             raise ValueError(
                 f"Patch {patch_number} old_value mismatch for {path}: expected {patch['old_value']!r}, found {current_value!r}."
             )
-        cursor[final_token] = patch["new_value"]
+        if jsonpath_parse is not None:
+            jsonpath_parse(normalized_path).update(payload, patch["new_value"])
+            continue
+
+        tokens = _parse_field_path(normalized_path)
+        cursor: Any = payload
+        for token in tokens[:-1]:
+            cursor = cursor[token]
+        cursor[tokens[-1]] = patch["new_value"]
     return validate_deck_payload(payload).deck
 
 

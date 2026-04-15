@@ -4,26 +4,46 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enterprise-ai-ppt"
-version = "0.1.0"
+version = "1.0.0"
 description = "AI planning + deterministic PPTX rendering for enterprise slide generation"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-  { name = "HUHU19961014" }
+  { name = "Enterprise-AI-PPT Maintainers" }
 ]
 dependencies = [
   "python-pptx>=0.6.21",
-  "openai>=1.0.0",
+  "openai>=1.30.0",
   "beautifulsoup4>=4.12.0",
   "lxml>=4.9.0",
   "python-docx>=1.1.0",
   "pypdf>=4.0.0",
-  "pydantic>=2.12.0"
+  "pydantic>=2.12.0",
+  "jsonpath-ng>=1.7.0"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.0.0"
+  "pytest>=8.0.0",
+  "hypothesis>=6.0.0",
+  "coverage>=7.6.0",
+  "ruff>=0.6.0",
+  "mypy>=1.11.0",
+  "build>=1.2.0"
+]
+docs = [
+  "mkdocs>=1.6.0",
+  "mkdocs-material>=9.5.0",
+  "mkdocstrings[python]>=0.26.0"
+]
+ui = [
+  "streamlit>=1.40.0"
+]
+svg-pipeline = [
+  "svglib>=1.5.0",
+  "reportlab>=4.0.0",
+  "Pillow>=9.0.0",
+  "numpy>=1.20.0"
 ]
 
 [project.scripts]
@@ -40,3 +60,52 @@ include = ["sie_autoppt*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+cache_dir = ".tmp_pytest_cache"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+  ".git",
+  ".venv",
+  ".tmp_pytest_cache",
+  "output",
+  "projects",
+  "skills",
+  "tools/template_utils",
+  "tools/archive",
+  "projects/generated",
+  "projects/visual_review"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.coverage.run]
+source = ["tools/sie_autoppt"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = true
+fail_under = 80
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:"
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+pretty = true
+files = [
+  "tools/sie_autoppt/v2/",
+  "tools/sie_autoppt/legacy/reference_styles.py",
+  "tools/sie_autoppt/planning/deck_planner.py",
+  "tools/sie_autoppt/planning/payload_builders.py",
+  "tools/sie_autoppt/llm_openai.py",
+  "tools/sie_autoppt/cli_v2_commands.py",
+  "tools/sie_autoppt/language_policy.py"
+]

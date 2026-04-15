@@ -1,46 +1,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from .layout_ids import SUPPORTED_LAYOUTS as LAYOUT_ID_SOURCE
+from .style_variants import SUPPORTED_STYLE_VARIANTS
 from .theme_loader import available_theme_names
+from .utils import normalize_data_sources, normalize_string_list, strip_text
 
+SUPPORTED_LAYOUTS = LAYOUT_ID_SOURCE
 SUPPORTED_THEMES = tuple(available_theme_names())
-SUPPORTED_LAYOUTS = (
-    "section_break",
-    "title_only",
-    "title_content",
-    "two_columns",
-    "title_image",
-    "timeline",
-    "stats_dashboard",
-    "matrix_grid",
-    "cards_grid",
-)
+
+class AutoPPTBase(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=False,
+        extra="ignore",
+    )
 
 
-def _strip_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
+class TextStripMixin(AutoPPTBase):
+    strip_required_fields: ClassVar[tuple[str, ...]] = ()
+    strip_optional_fields: ClassVar[tuple[str, ...]] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_declared_text_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        for field_name in cls.strip_required_fields:
+            if field_name in normalized:
+                normalized[field_name] = strip_text(normalized.get(field_name))
+        for field_name in cls.strip_optional_fields:
+            if field_name in normalized:
+                text = strip_text(normalized.get(field_name))
+                normalized[field_name] = text or None
+        return normalized
 
 
-def _normalize_string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    normalized: list[str] = []
-    for item in value:
-        text = _strip_text(item)
-        if text:
-            normalized.append(text)
-    return normalized
-
-
-class ThemeMeta(BaseModel):
+class ThemeMeta(AutoPPTBase):
     title: str = Field(min_length=1, max_length=80)
-    theme: str = Field(default="business_red")
+    theme: str = Field(default="sie_consulting_fixed")
     language: str = Field(default="zh-CN", min_length=2, max_length=16)
     author: str = Field(default="AI Auto PPT", min_length=1, max_length=40)
     version: str = Field(default="2.0", min_length=1, max_length=10)
@@ -48,7 +51,7 @@ class ThemeMeta(BaseModel):
     @field_validator("title", "theme", "language", "author", "version", mode="before")
     @classmethod
     def _strip_required_text(cls, value: Any) -> str:
-        return _strip_text(value)
+        return strip_text(value)
 
     @field_validator("theme")
     @classmethod
@@ -58,18 +61,14 @@ class ThemeMeta(BaseModel):
         return value
 
 
-class OutlineItem(BaseModel):
+class OutlineItem(TextStripMixin):
+    strip_required_fields = ("title", "goal")
     page_no: int = Field(ge=1, le=20)
     title: str = Field(min_length=2, max_length=32)
     goal: str = Field(min_length=4, max_length=80)
 
-    @field_validator("title", "goal", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str:
-        return _strip_text(value)
 
-
-class OutlineDocument(BaseModel):
+class OutlineDocument(AutoPPTBase):
     pages: list[OutlineItem] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -83,34 +82,25 @@ class OutlineDocument(BaseModel):
         return [item.model_dump(mode="json") for item in self.pages]
 
 
-class ColumnBlock(BaseModel):
+class ColumnBlock(TextStripMixin):
+    strip_required_fields = ("heading",)
     heading: str = Field(min_length=1, max_length=24)
     items: list[str] = Field(min_length=1, max_length=6)
-
-    @field_validator("heading", mode="before")
-    @classmethod
-    def _strip_heading(cls, value: Any) -> str:
-        return _strip_text(value)
 
     @field_validator("items", mode="before")
     @classmethod
     def _normalize_items(cls, value: Any) -> list[str]:
-        items = _normalize_string_list(value)
+        items = normalize_string_list(value)
         if not items:
             raise ValueError("items must contain at least one non-empty string.")
         return items
 
 
-class ImageBlock(BaseModel):
+class ImageBlock(TextStripMixin):
+    strip_optional_fields = ("caption", "path")
     mode: Literal["placeholder", "local_path"] = "placeholder"
     caption: str | None = Field(default=None, max_length=40)
     path: str | None = None
-
-    @field_validator("caption", "path", mode="before")
-    @classmethod
-    def _strip_optional_text(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
     @model_validator(mode="after")
     def _validate_path_requirement(self) -> "ImageBlock":
@@ -119,144 +109,132 @@ class ImageBlock(BaseModel):
         return self
 
 
-class TimelineStage(BaseModel):
+class TimelineStage(TextStripMixin):
+    strip_required_fields = ("title",)
+    strip_optional_fields = ("detail",)
     title: str = Field(min_length=1, max_length=24)
     detail: str | None = Field(default=None, max_length=60)
 
-    @field_validator("title", "detail", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class CardEntry(BaseModel):
+class CardEntry(TextStripMixin):
+    strip_required_fields = ("title",)
+    strip_optional_fields = ("body",)
     title: str = Field(min_length=1, max_length=24)
     body: str | None = Field(default=None, max_length=60)
 
-    @field_validator("title", "body", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class MetricEntry(BaseModel):
+class MetricEntry(TextStripMixin):
+    strip_required_fields = ("label", "value")
+    strip_optional_fields = ("note",)
     label: str = Field(min_length=1, max_length=24)
     value: str = Field(min_length=1, max_length=24)
     note: str | None = Field(default=None, max_length=40)
 
-    @field_validator("label", "value", "note", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class MatrixCell(BaseModel):
+class MatrixCell(TextStripMixin):
+    strip_required_fields = ("title",)
+    strip_optional_fields = ("body",)
     title: str = Field(min_length=1, max_length=24)
     body: str | None = Field(default=None, max_length=60)
 
-    @field_validator("title", "body", mode="before")
+
+class DataSourceNote(TextStripMixin):
+    strip_required_fields = ("claim", "source")
+    claim: str = Field(min_length=1, max_length=60)
+    source: str = Field(min_length=1, max_length=80)
+    confidence: Literal["high", "medium", "low"] = "medium"
+
+
+class SlideAnnotations(TextStripMixin):
+    strip_optional_fields = ("anti_argument", "template_hint")
+    anti_argument: str | None = Field(default=None, max_length=120)
+    style_variant: Literal["minimal", "standard", "decorative"] | None = Field(default=None)
+    template_hint: str | None = Field(default=None, max_length=80)
+    data_sources: list[DataSourceNote] = Field(default_factory=list, max_length=4)
+
+    @field_validator("style_variant", mode="before")
     @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
+    def _normalize_style_variant(cls, value: Any) -> str | None:
+        text = strip_text(value)
+        if not text:
+            return None
+        normalized = text.lower()
+        if normalized not in SUPPORTED_STYLE_VARIANTS:
+            raise ValueError(f"style_variant must be one of {', '.join(SUPPORTED_STYLE_VARIANTS)}")
+        return normalized
 
 
-class SectionBreakSlide(BaseModel):
+class SectionBreakSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
+    strip_optional_fields = ("subtitle", "anti_argument")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["section_break"]
     title: str = Field(min_length=2, max_length=60)
     subtitle: str | None = Field(default=None, max_length=80)
 
-    @field_validator("slide_id", "title", "subtitle", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class TitleOnlySlide(BaseModel):
+class TitleOnlySlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_only"]
     title: str = Field(min_length=2, max_length=60)
 
-    @field_validator("slide_id", "title", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str:
-        return _strip_text(value)
 
-
-class TitleContentSlide(BaseModel):
+class TitleContentSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_content"]
     title: str = Field(min_length=2, max_length=60)
     content: list[str] = Field(min_length=1, max_length=10)
 
-    @field_validator("slide_id", "title", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str:
-        return _strip_text(value)
-
     @field_validator("content", mode="before")
     @classmethod
     def _normalize_content(cls, value: Any) -> list[str]:
-        items = _normalize_string_list(value)
+        items = normalize_string_list(value)
         if not items:
             raise ValueError("content must contain at least one non-empty string.")
         return items
 
 
-class TwoColumnsSlide(BaseModel):
+class TwoColumnsSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["two_columns"]
     title: str = Field(min_length=2, max_length=60)
     left: ColumnBlock
     right: ColumnBlock
 
-    @field_validator("slide_id", "title", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str:
-        return _strip_text(value)
 
-
-class TitleImageSlide(BaseModel):
+class TitleImageSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["title_image"]
     title: str = Field(min_length=2, max_length=60)
     content: list[str] = Field(min_length=1, max_length=8)
     image: ImageBlock
 
-    @field_validator("slide_id", "title", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str:
-        return _strip_text(value)
-
     @field_validator("content", mode="before")
     @classmethod
     def _normalize_content(cls, value: Any) -> list[str]:
-        items = _normalize_string_list(value)
+        items = normalize_string_list(value)
         if not items:
             raise ValueError("content must contain at least one non-empty string.")
         return items
 
 
-class TimelineSlide(BaseModel):
+class TimelineSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
+    strip_optional_fields = ("heading", "anti_argument")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["timeline"]
     title: str = Field(min_length=2, max_length=60)
     heading: str | None = Field(default=None, max_length=40)
     stages: list[TimelineStage] = Field(min_length=2, max_length=6)
 
-    @field_validator("slide_id", "title", "heading", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class StatsDashboardSlide(BaseModel):
+class StatsDashboardSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
+    strip_optional_fields = ("heading", "anti_argument")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["stats_dashboard"]
     title: str = Field(min_length=2, max_length=60)
@@ -264,19 +242,15 @@ class StatsDashboardSlide(BaseModel):
     metrics: list[MetricEntry] = Field(min_length=2, max_length=6)
     insights: list[str] = Field(default_factory=list, max_length=4)
 
-    @field_validator("slide_id", "title", "heading", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
-
     @field_validator("insights", mode="before")
     @classmethod
     def _normalize_insights(cls, value: Any) -> list[str]:
-        return _normalize_string_list(value)
+        return normalize_string_list(value)
 
 
-class MatrixGridSlide(BaseModel):
+class MatrixGridSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
+    strip_optional_fields = ("heading", "x_axis", "y_axis", "anti_argument")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["matrix_grid"]
     title: str = Field(min_length=2, max_length=60)
@@ -285,25 +259,15 @@ class MatrixGridSlide(BaseModel):
     y_axis: str | None = Field(default=None, max_length=24)
     cells: list[MatrixCell] = Field(min_length=2, max_length=4)
 
-    @field_validator("slide_id", "title", "heading", "x_axis", "y_axis", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
-
-class CardsGridSlide(BaseModel):
+class CardsGridSlide(SlideAnnotations):
+    strip_required_fields = ("slide_id", "title")
+    strip_optional_fields = ("heading", "anti_argument")
     slide_id: str = Field(min_length=1, max_length=40)
     layout: Literal["cards_grid"]
     title: str = Field(min_length=2, max_length=60)
     heading: str | None = Field(default=None, max_length=40)
     cards: list[CardEntry] = Field(min_length=2, max_length=4)
-
-    @field_validator("slide_id", "title", "heading", mode="before")
-    @classmethod
-    def _strip_text_fields(cls, value: Any) -> str | None:
-        text = _strip_text(value)
-        return text or None
 
 
 SlideModel = Annotated[
@@ -320,7 +284,7 @@ SlideModel = Annotated[
 ]
 
 
-class DeckDocument(BaseModel):
+class DeckDocument(AutoPPTBase):
     meta: ThemeMeta
     slides: list[SlideModel] = Field(min_length=1, max_length=20)
 
@@ -347,7 +311,7 @@ def normalize_deck_payload(
     payload: dict[str, Any],
     *,
     default_title: str = "AI Auto PPT",
-    default_theme: str = "business_red",
+    default_theme: str = "sie_consulting_fixed",
     default_language: str = "zh-CN",
     default_author: str = "AI Auto PPT",
 ) -> dict[str, Any]:
@@ -358,11 +322,11 @@ def normalize_deck_payload(
     if not isinstance(meta, dict):
         meta = {}
     normalized_meta = {
-        "title": _strip_text(meta.get("title")) or default_title,
-        "theme": _strip_text(meta.get("theme")) or default_theme,
-        "language": _strip_text(meta.get("language")) or default_language,
-        "author": _strip_text(meta.get("author")) or default_author,
-        "version": _strip_text(meta.get("version")) or "2.0",
+        "title": strip_text(meta.get("title")) or default_title,
+        "theme": strip_text(meta.get("theme")) or default_theme,
+        "language": strip_text(meta.get("language")) or default_language,
+        "author": strip_text(meta.get("author")) or default_author,
+        "version": strip_text(meta.get("version")) or "2.0",
     }
 
     raw_slides = payload.get("slides", [])
@@ -376,9 +340,15 @@ def normalize_deck_payload(
         slide = dict(raw_slide)
         slide.setdefault("slide_id", f"s{index}")
         if "title" in slide:
-            slide["title"] = _strip_text(slide["title"])
+            slide["title"] = strip_text(slide["title"])
         if "layout" in slide:
-            slide["layout"] = _strip_text(slide["layout"])
+            slide["layout"] = strip_text(slide["layout"])
+        anti_argument = strip_text(slide.get("anti_argument"))
+        if anti_argument:
+            slide["anti_argument"] = anti_argument
+        data_sources = normalize_data_sources(slide.get("data_sources"))
+        if data_sources:
+            slide["data_sources"] = data_sources
         normalized_slides.append(slide)
 
     return {"meta": normalized_meta, "slides": normalized_slides}
@@ -420,7 +390,7 @@ def validate_deck_payload(
     payload: dict[str, Any],
     *,
     default_title: str = "AI Auto PPT",
-    default_theme: str = "business_red",
+    default_theme: str = "sie_consulting_fixed",
     default_language: str = "zh-CN",
     default_author: str = "AI Auto PPT",
 ) -> ValidatedDeck:

@@ -1,42 +1,60 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import re
+import subprocess
+import sys
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from ..clarifier import DEFAULT_AUDIENCE_HINT
-from ..config import DEFAULT_OUTPUT_DIR
+from ..config import DEFAULT_OUTPUT_DIR, PROJECT_ROOT
+from ..language_policy import format_language_constraints, get_language_policy, normalize_language_code
 from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
+from ..plugins import resolve_model_adapter
 from ..prompting import render_prompt_template
+from .content_rewriter import rewrite_deck, write_rewrite_log
 from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
-    build_deck_output_path,
-    build_log_output_path,
-    build_outline_output_path,
-    build_ppt_output_path,
-    build_semantic_output_path,
     default_deck_output_path,
     default_log_output_path,
     default_outline_output_path,
     default_ppt_output_path,
     default_semantic_output_path,
     load_outline_document,
-    write_semantic_document,
+    write_deck_document,
     write_outline_document,
+    write_semantic_document,
 )
-from .ppt_engine import generate_ppt
+from .quality_checks import quality_gate, write_quality_gate_result
 from .schema import (
-    DeckDocument,
-    OutlineDocument,
     SUPPORTED_LAYOUTS,
     SUPPORTED_THEMES,
+    DeckDocument,
+    OutlineDocument,
     ValidatedDeck,
     collect_deck_warnings,
-    validate_deck_payload,
 )
+from .theme_loader import load_theme
 
 SUPPORTED_GENERATION_MODES = ("quick", "deep")
+DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py",
+)
+DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "total_md_split.py",
+)
+DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES = (
+    PROJECT_ROOT / "projects" / "ppt-master" / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
+    PROJECT_ROOT / "skills" / "ppt-master" / "scripts" / "finalize_svg.py",
+)
+DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
 
 
 @dataclass(frozen=True)
@@ -45,7 +63,7 @@ class OutlineGenerationRequest:
     brief: str = ""
     audience: str = DEFAULT_AUDIENCE_HINT
     language: str = "zh-CN"
-    theme: str = "business_red"
+    theme: str = "sie_consulting_fixed"
     exact_slides: int | None = None
     min_slides: int = 6
     max_slides: int = 10
@@ -61,7 +79,7 @@ class DeckGenerationRequest:
     brief: str = ""
     audience: str = DEFAULT_AUDIENCE_HINT
     language: str = "zh-CN"
-    theme: str = "business_red"
+    theme: str = "sie_consulting_fixed"
     author: str = "Enterprise AI PPT"
     generation_mode: str = "deep"
     structured_context: dict[str, Any] | None = None
@@ -79,6 +97,8 @@ class V2MakeArtifacts:
     pptx_path: Path
     deck: DeckDocument
     warnings: tuple[str, ...] = ()
+    svg_project_path: Path | None = None
+    svg_final_dir: Path | None = None
 
 
 def _clamp_slide_count(value: int) -> int:
@@ -107,6 +127,183 @@ def _json_block(payload: dict[str, Any] | None, fallback: str = "none") -> str:
     if not payload:
         return fallback
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _create_structured_client(model: str | None = None) -> Any:
+    adapter_name = str(os.environ.get("SIE_AUTOPPT_MODEL_ADAPTER", "") or "").strip().lower()
+    if adapter_name:
+        adapter_factory = resolve_model_adapter(adapter_name)
+        if adapter_factory is None:
+            raise ValueError(f"Unknown SIE_AUTOPPT_MODEL_ADAPTER: {adapter_name}")
+        return adapter_factory(model)
+    config = load_openai_responses_config(model=model)
+    return OpenAIResponsesClient(config)
+
+
+def _safe_stem(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_") or "slide"
+
+
+def _escape_svg_text(value: str) -> str:
+    return escape(str(value), quote=True)
+
+
+def _resolve_script_path(candidate_paths: tuple[Path, ...], script_name: str) -> Path:
+    for candidate in candidate_paths:
+        if candidate.exists():
+            return candidate
+    checked = "\n".join(f"- {item}" for item in candidate_paths)
+    raise FileNotFoundError(f"Unable to locate {script_name}. Checked:\n{checked}")
+
+
+def _run_command(command: list[str], *, step_name: str) -> None:
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{step_name} timed out after {DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC}s") from exc
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"{step_name} failed: {details or 'unknown error'}")
+
+
+def _collect_slide_text_lines(slide: Any) -> list[str]:
+    lines: list[str] = []
+    layout = str(getattr(slide, "layout", ""))
+    if layout == "title_content":
+        lines.extend(getattr(slide, "content", []))
+    elif layout == "two_columns":
+        left = getattr(slide, "left", None)
+        right = getattr(slide, "right", None)
+        if left is not None:
+            if getattr(left, "heading", ""):
+                lines.append(str(left.heading))
+            lines.extend(getattr(left, "items", []))
+        if right is not None:
+            if getattr(right, "heading", ""):
+                lines.append(str(right.heading))
+            lines.extend(getattr(right, "items", []))
+    elif layout == "title_image":
+        lines.extend(getattr(slide, "content", []))
+        image = getattr(slide, "image", None)
+        if image is not None:
+            caption = getattr(image, "caption", None)
+            if isinstance(caption, str) and caption:
+                lines.append(caption)
+    elif layout == "timeline":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for stage in getattr(slide, "stages", []):
+            title = getattr(stage, "title", "")
+            detail = getattr(stage, "detail", "")
+            if title:
+                lines.append(str(title))
+            if detail:
+                lines.append(str(detail))
+    elif layout == "stats_dashboard":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for metric in getattr(slide, "metrics", []):
+            label = getattr(metric, "label", "")
+            value = getattr(metric, "value", "")
+            note = getattr(metric, "note", "")
+            if label or value:
+                lines.append(f"{label}: {value}".strip(": "))
+            if note:
+                lines.append(str(note))
+        lines.extend(getattr(slide, "insights", []))
+    elif layout == "matrix_grid":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for cell in getattr(slide, "cells", []):
+            title = getattr(cell, "title", "")
+            body = getattr(cell, "body", "")
+            if title:
+                lines.append(str(title))
+            if body:
+                lines.append(str(body))
+    elif layout == "cards_grid":
+        if getattr(slide, "heading", ""):
+            lines.append(str(slide.heading))
+        for card in getattr(slide, "cards", []):
+            title = getattr(card, "title", "")
+            body = getattr(card, "body", "")
+            if title:
+                lines.append(str(title))
+            if body:
+                lines.append(str(body))
+    return [line.strip() for line in lines if str(line).strip()]
+
+
+def _write_svg_project(deck: DeckDocument, *, project_path: Path) -> Path:
+    theme = load_theme(deck.meta.theme)
+    width = int(round(theme.page.width * 120))
+    height = int(round(theme.page.height * 120))
+    title_font = theme.fonts.title
+    body_font = theme.fonts.body
+
+    svg_output_dir = project_path / "svg_output"
+    notes_dir = project_path / "notes"
+    svg_output_dir.mkdir(parents=True, exist_ok=True)
+    notes_dir.mkdir(parents=True, exist_ok=True)
+
+    note_sections: list[str] = []
+    for index, slide in enumerate(deck.slides, start=1):
+        slide_slug = _safe_stem(f"{slide.slide_id}_{index:02d}")
+        slide_stem = f"slide_{index:02d}_{slide_slug}"
+        svg_path = svg_output_dir / f"{slide_stem}.svg"
+        lines = _collect_slide_text_lines(slide)
+        title = _escape_svg_text(getattr(slide, "title", f"Slide {index}"))
+
+        text_elements = [
+            f'<text x="84" y="96" fill="{theme.colors.primary}" font-family="{_escape_svg_text(title_font)}" font-size="42" font-weight="700">{title}</text>'
+        ]
+        y = 160
+        for item in lines[:10]:
+            safe_item = _escape_svg_text(item)
+            text_elements.append(
+                f'<text x="116" y="{y}" fill="{theme.colors.text_main}" font-family="{_escape_svg_text(body_font)}" font-size="26">{safe_item}</text>'
+            )
+            y += 58
+
+        svg_payload = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">\n'
+            f'  <rect width="{width}" height="{height}" fill="{theme.colors.bg}"/>\n'
+            f'  <rect x="72" y="56" width="{width - 144}" height="{height - 112}" rx="18" fill="{theme.colors.card_bg}" stroke="{theme.colors.line}" stroke-width="2"/>\n'
+            f"  {' '.join(text_elements)}\n"
+            "</svg>\n"
+        )
+        svg_path.write_text(svg_payload, encoding="utf-8")
+
+        notes_body = "\n".join(f"- {line}" for line in lines[:8]) or "- N/A"
+        note_sections.append(f"# {slide_stem}\n{notes_body}")
+
+    (notes_dir / "total.md").write_text("\n\n".join(note_sections).strip() + "\n", encoding="utf-8")
+    return project_path
+
+
+def _run_svg_pipeline(*, project_path: Path, final_ppt_output: Path) -> None:
+    split_script = _resolve_script_path(DEFAULT_TOTAL_MD_SPLIT_SCRIPT_CANDIDATES, "total_md_split.py")
+    finalize_script = _resolve_script_path(DEFAULT_FINALIZE_SVG_SCRIPT_CANDIDATES, "finalize_svg.py")
+    export_script = _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
+    final_ppt_output.parent.mkdir(parents=True, exist_ok=True)
+
+    _run_command([sys.executable, str(split_script), str(project_path)], step_name="svg split notes")
+    _run_command([sys.executable, str(finalize_script), str(project_path)], step_name="svg finalize")
+    _run_command(
+        [sys.executable, str(export_script), str(project_path), "-s", "final", "-o", str(final_ppt_output)],
+        step_name="svg export",
+    )
+
+
+def _ensure_svg_export_dependency() -> None:
+    _resolve_script_path(DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES, "svg_to_pptx.py")
 
 
 def build_context_schema() -> dict[str, Any]:
@@ -212,16 +409,19 @@ def build_context_prompts(
     audience: str,
     language: str,
 ) -> tuple[str, str]:
+    policy = get_language_policy(language)
+    language_constraints = format_language_constraints(policy)
     developer_prompt = (
         "You convert raw presentation requirements into structured business context JSON.\n"
-        f"Use {language}.\n"
-        "Do not invent facts. If information is missing, use '未知' for strings and [] for arrays.\n"
+        f"Use {policy.code}.\n"
+        f"Do not invent facts. If information is missing, use '{policy.unknown_token}' for strings and [] for arrays.\n"
+        f"{language_constraints}\n"
         "Extract only from the provided topic, brief, and audience."
     )
     user_prompt = (
         f"Topic:\n{topic.strip()}\n\n"
         f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        f"Brief:\n{brief.strip() or policy.none_token}\n\n"
         "Return only JSON."
     )
     return developer_prompt, user_prompt
@@ -236,18 +436,20 @@ def build_strategy_prompts(
     structured_context: dict[str, Any],
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(language)
     feedback_block = ""
     if validation_feedback:
         feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
     developer_prompt = render_prompt_template(
         "prompts/system/v2_strategy.md",
-        language=language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         feedback_block=feedback_block,
     )
     user_prompt = (
         f"Topic:\n{topic.strip()}\n\n"
         f"Audience:\n{audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{brief.strip() or 'none'}\n\n"
+        f"Brief:\n{brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(structured_context)}\n\n"
         "Return only JSON."
@@ -263,13 +465,13 @@ def extract_structured_context(
     language: str = "zh-CN",
     model: str | None = None,
 ) -> dict[str, Any]:
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    normalized_language = normalize_language_code(language)
+    client = _create_structured_client(model=model)
     developer_prompt, user_prompt = build_context_prompts(
         topic=topic,
         brief=brief,
         audience=audience,
-        language=language,
+        language=normalized_language,
     )
     return client.create_structured_json(
         developer_prompt=developer_prompt,
@@ -289,15 +491,15 @@ def generate_strategy_with_ai(
     model: str | None = None,
     max_attempts: int = 3,
 ) -> dict[str, Any]:
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    normalized_language = normalize_language_code(language)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_strategy_prompts(
             topic=topic,
             brief=brief,
             audience=audience,
-            language=language,
+            language=normalized_language,
             structured_context=structured_context,
             validation_feedback=feedback,
         )
@@ -377,6 +579,7 @@ def build_outline_prompts(
     request: OutlineGenerationRequest,
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(request.language)
     min_slides, max_slides = resolve_slide_bounds(request)
     slide_rule = f"Return exactly {min_slides} pages." if min_slides == max_slides else f"Return {min_slides}-{max_slides} pages."
     feedback_block = ""
@@ -385,13 +588,14 @@ def build_outline_prompts(
     developer_prompt = render_prompt_template(
         "prompts/system/v2_outline.md",
         slide_rule=slide_rule,
-        language=request.language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         feedback_block=feedback_block,
     )
     user_prompt = (
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        f"Brief:\n{request.brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(request.structured_context)}\n\n"
         "Strategic Analysis JSON:\n"
@@ -409,12 +613,14 @@ def build_deck_prompts(
     request: DeckGenerationRequest,
     validation_feedback: tuple[str, ...] = (),
 ) -> tuple[str, str]:
+    policy = get_language_policy(request.language)
     feedback_block = ""
     if validation_feedback:
         feedback_block = "\nPrevious attempt failed validation:\n" + "\n".join(f"- {item}" for item in validation_feedback)
     developer_prompt = render_prompt_template(
         "prompts/system/v2_slides.md",
-        language=request.language,
+        language=policy.code,
+        language_constraints=format_language_constraints(policy),
         theme_name=request.theme,
         supported_layouts=", ".join(SUPPORTED_LAYOUTS),
         feedback_block=feedback_block,
@@ -422,7 +628,7 @@ def build_deck_prompts(
     user_prompt = (
         f"Topic:\n{request.topic.strip()}\n\n"
         f"Audience:\n{request.audience.strip() or DEFAULT_AUDIENCE_HINT}\n\n"
-        f"Brief:\n{request.brief.strip() or 'none'}\n\n"
+        f"Brief:\n{request.brief.strip() or policy.none_token}\n\n"
         "Structured Context JSON:\n"
         f"{_json_block(request.structured_context)}\n\n"
         "Strategic Analysis JSON:\n"
@@ -449,12 +655,13 @@ def generate_outline_with_ai(
 ) -> OutlineDocument:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    normalized_language = normalize_language_code(request.language)
     generation_mode = normalize_generation_mode(request.generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         generation_mode=generation_mode,
         structured_context=request.structured_context,
         strategic_analysis=request.strategic_analysis,
@@ -465,7 +672,7 @@ def generate_outline_with_ai(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         theme=request.theme,
         exact_slides=request.exact_slides,
         min_slides=request.min_slides,
@@ -474,8 +681,7 @@ def generate_outline_with_ai(
         structured_context=structured_context,
         strategic_analysis=strategic_analysis,
     )
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_outline_prompts(enriched_request, validation_feedback=feedback)
@@ -497,6 +703,7 @@ def generate_deck_with_ai(
     model: str | None = None,
     max_attempts: int = 3,
 ) -> ValidatedDeck:
+    normalized_language = normalize_language_code(request.language)
     semantic_payload = generate_semantic_deck_with_ai(
         request=request,
         model=model,
@@ -506,7 +713,7 @@ def generate_deck_with_ai(
         semantic_payload,
         default_title=request.topic,
         default_theme=request.theme,
-        default_language=request.language,
+        default_language=normalized_language,
         default_author=request.author,
     )
 
@@ -518,12 +725,13 @@ def generate_semantic_deck_with_ai(
 ) -> dict[str, Any]:
     if request.theme not in SUPPORTED_THEMES:
         raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+    normalized_language = normalize_language_code(request.language)
     generation_mode = normalize_generation_mode(request.generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=request.topic,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         generation_mode=generation_mode,
         structured_context=request.structured_context,
         strategic_analysis=request.strategic_analysis,
@@ -535,15 +743,14 @@ def generate_semantic_deck_with_ai(
         outline=request.outline,
         brief=request.brief,
         audience=request.audience,
-        language=request.language,
+        language=normalized_language,
         theme=request.theme,
         author=request.author,
         generation_mode=generation_mode,
         structured_context=structured_context,
         strategic_analysis=strategic_analysis,
     )
-    config = load_openai_responses_config(model=model)
-    client = OpenAIResponsesClient(config)
+    client = _create_structured_client(model=model)
     feedback: tuple[str, ...] = ()
     for _attempt in range(1, max_attempts + 1):
         developer_prompt, user_prompt = build_deck_prompts(enriched_request, validation_feedback=feedback)
@@ -567,13 +774,104 @@ def generate_semantic_deck_with_ai(
     raise ValueError("Deck generation failed validation after 3 attempts: " + "; ".join(feedback))
 
 
+async def generate_semantic_decks_with_ai_batch(
+    requests: list[DeckGenerationRequest],
+    *,
+    model: str | None = None,
+    concurrency: int = 4,
+) -> list[dict[str, Any]]:
+    if not requests:
+        return []
+    bounded = max(1, int(concurrency))
+    semaphore = asyncio.Semaphore(bounded)
+    results: list[dict[str, Any] | None] = [None] * len(requests)
+    normalized_requests: list[DeckGenerationRequest] = []
+    for request in requests:
+        if request.theme not in SUPPORTED_THEMES:
+            raise ValueError(f"theme must be one of {', '.join(SUPPORTED_THEMES)}")
+        normalized_language = normalize_language_code(request.language)
+        generation_mode = normalize_generation_mode(request.generation_mode)
+        structured_context, strategic_analysis = ensure_generation_context(
+            topic=request.topic,
+            brief=request.brief,
+            audience=request.audience,
+            language=normalized_language,
+            generation_mode=generation_mode,
+            structured_context=request.structured_context,
+            strategic_analysis=request.strategic_analysis,
+            model=model,
+        )
+        normalized_requests.append(
+            DeckGenerationRequest(
+                topic=request.topic,
+                outline=request.outline,
+                brief=request.brief,
+                audience=request.audience,
+                language=normalized_language,
+                theme=request.theme,
+                author=request.author,
+                generation_mode=generation_mode,
+                structured_context=structured_context,
+                strategic_analysis=strategic_analysis,
+            )
+        )
+
+    client = _create_structured_client(model=model)
+    if hasattr(client, "acreate_structured_json_batch"):
+        batch_requests: list[dict[str, Any]] = []
+        for normalized in normalized_requests:
+            developer_prompt, user_prompt = build_deck_prompts(normalized)
+            batch_requests.append(
+                {
+                    "developer_prompt": developer_prompt,
+                    "user_items": [{"type": "text", "text": user_prompt}],
+                    "schema_name": "ppt_deck_v2",
+                    "schema": build_deck_schema(),
+                }
+            )
+        payloads = await client.acreate_structured_json_batch(batch_requests, concurrency=bounded)
+        for index, payload in enumerate(payloads):
+            normalized = normalized_requests[index]
+            compile_semantic_deck_payload(
+                payload,
+                default_title=normalized.topic,
+                default_theme=normalized.theme,
+                default_language=normalized.language,
+                default_author=normalized.author,
+            )
+            results[index] = payload
+        return [item for item in results if item is not None]
+
+    async def _run(index: int, normalized: DeckGenerationRequest) -> None:
+        developer_prompt, user_prompt = build_deck_prompts(normalized)
+        async with semaphore:
+            payload = await asyncio.to_thread(
+                client.create_structured_json,
+                developer_prompt=developer_prompt,
+                user_prompt=user_prompt,
+                schema_name="ppt_deck_v2",
+                schema=build_deck_schema(),
+            )
+        compile_semantic_deck_payload(
+            payload,
+            default_title=normalized.topic,
+            default_theme=normalized.theme,
+            default_language=normalized.language,
+            default_author=normalized.author,
+        )
+        results[index] = payload
+
+    await asyncio.gather(*(_run(index, normalized) for index, normalized in enumerate(normalized_requests)))
+    return [item for item in results if item is not None]
+
+
 def make_v2_ppt(
     *,
     topic: str,
     brief: str = "",
     audience: str = DEFAULT_AUDIENCE_HINT,
     language: str = "zh-CN",
-    theme: str = "business_red",
+    theme: str = "sie_consulting_fixed",
     author: str = "Enterprise AI PPT",
     exact_slides: int | None = None,
     min_slides: int = 6,
@@ -589,13 +887,15 @@ def make_v2_ppt(
     ppt_output: Path | None = None,
     outline_path: Path | None = None,
 ) -> V2MakeArtifacts:
+    _ensure_svg_export_dependency()
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
+    normalized_language = normalize_language_code(language)
     resolved_generation_mode = normalize_generation_mode(generation_mode)
     structured_context, strategic_analysis = ensure_generation_context(
         topic=topic,
         brief=brief,
         audience=audience,
-        language=language,
+        language=normalized_language,
         generation_mode=resolved_generation_mode,
         structured_context=None,
         strategic_analysis=None,
@@ -610,7 +910,7 @@ def make_v2_ppt(
                 topic=topic,
                 brief=brief,
                 audience=audience,
-                language=language,
+                language=normalized_language,
                 theme=theme,
                 exact_slides=exact_slides,
                 min_slides=min_slides,
@@ -630,7 +930,7 @@ def make_v2_ppt(
             outline=outline,
             brief=brief,
             audience=audience,
-            language=language,
+            language=normalized_language,
             theme=theme,
             author=author,
             generation_mode=resolved_generation_mode,
@@ -645,28 +945,62 @@ def make_v2_ppt(
         semantic_payload,
         default_title=topic,
         default_theme=theme,
-        default_language=language,
+        default_language=normalized_language,
         default_author=author,
     )
     final_deck_output = deck_output or default_deck_output_path(final_output_dir)
-
     final_log_output = log_output or default_log_output_path(final_output_dir)
     final_ppt_output = ppt_output or default_ppt_output_path(final_output_dir)
-    render_result = generate_ppt(
-        validated_deck,
-        output_path=final_ppt_output,
-        theme_name=theme,
-        log_path=final_log_output,
-        deck_output_path=final_deck_output,
+    rewrite_log_path = final_log_output.parent / "rewrite_log.json"
+    warnings_path = final_log_output.parent / "warnings.json"
+
+    initial_quality = quality_gate(validated_deck)
+    rewrite_result = rewrite_deck(validated_deck, initial_quality)
+    write_rewrite_log(rewrite_result, rewrite_log_path)
+    write_quality_gate_result(rewrite_result.final_quality_gate, warnings_path)
+
+    rewritten_validated = rewrite_result.validated_deck or validated_deck
+    if rewritten_validated is None:
+        raise ValueError("Schema validation failed; SVG pipeline was skipped.")
+    if not rewrite_result.final_quality_gate.passed:
+        raise ValueError(
+            f"Quality gate failed: {rewrite_result.final_quality_gate.summary['error_count']} error(s) found. SVG pipeline was skipped."
+        )
+
+    final_deck = rewritten_validated.deck
+    write_deck_document(final_deck, final_deck_output)
+
+    safe_prefix = _safe_stem(output_prefix)
+    svg_project_path = final_output_dir / "svg_projects" / f"{safe_prefix}_ppt169"
+    _write_svg_project(final_deck, project_path=svg_project_path)
+    _run_svg_pipeline(project_path=svg_project_path, final_ppt_output=final_ppt_output)
+
+    final_log_output.parent.mkdir(parents=True, exist_ok=True)
+    final_log_output.write_text(
+        "\n".join(
+            (
+                "INFO: make_v2_ppt routes through SVG primary pipeline.",
+                f"INFO: svg_project={svg_project_path}",
+                "INFO: svg_stage=final",
+                f"INFO: output_pptx={final_ppt_output}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
     )
     return V2MakeArtifacts(
         outline_path=final_outline_output,
         semantic_path=final_semantic_output,
-        deck_path=render_result.deck_path or final_deck_output,
+        deck_path=final_deck_output,
         log_path=final_log_output,
-        rewrite_log_path=render_result.rewrite_log_path or (final_log_output.parent / "rewrite_log.json"),
-        warnings_path=render_result.warnings_path or (final_log_output.parent / "warnings.json"),
-        pptx_path=render_result.output_path,
-        deck=render_result.final_deck,
-        warnings=tuple(collect_deck_warnings(render_result.final_deck)),
+        rewrite_log_path=rewrite_log_path,
+        warnings_path=warnings_path,
+        pptx_path=final_ppt_output,
+        deck=final_deck,
+        warnings=tuple(collect_deck_warnings(final_deck)),
+        svg_project_path=svg_project_path,
+        svg_final_dir=svg_project_path / "svg_final",
     )
+
+
+

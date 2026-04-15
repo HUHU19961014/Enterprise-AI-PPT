@@ -1,6 +1,9 @@
+import asyncio
 import json
+import logging
 import mimetypes
 import os
+import threading
 import time
 from base64 import b64encode
 from pathlib import Path
@@ -8,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 from urllib.parse import urlparse
+from functools import lru_cache
 
 from .config import (
     DEFAULT_AI_MODEL,
@@ -16,22 +20,9 @@ from .config import (
     DEFAULT_AI_TIMEOUT_SEC,
     infer_llm_api_style,
 )
+from .exceptions import OpenAIConfigurationError, OpenAIHTTPStatusError, OpenAIResponsesError
 
-
-class OpenAIConfigurationError(ValueError):
-    pass
-
-
-class OpenAIResponsesError(RuntimeError):
-    pass
-
-
-class OpenAIHTTPStatusError(OpenAIResponsesError):
-    def __init__(self, status_code: int, detail: str, route: str):
-        super().__init__(format_openai_http_error(status_code, detail))
-        self.status_code = status_code
-        self.detail = detail
-        self.route = route
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,20 +38,79 @@ class OpenAIResponsesConfig:
     project: str | None = None
 
 
-def _allows_empty_api_key(base_url: str) -> bool:
-    if os.environ.get("SIE_AUTOPPT_ALLOW_EMPTY_API_KEY", "").strip().lower() in {"1", "true", "yes"}:
-        return True
+@dataclass(frozen=True)
+class AnthropicVisionConfig:
+    api_key: str
+    base_url: str
+    model: str
+    timeout_sec: float
 
-    hostname = (urlparse(base_url).hostname or "").lower()
-    return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+def _allows_empty_api_key(base_url: str) -> bool:
+    # Default is permissive: in hosted agent environments (Codex/Claude Code/etc.),
+    # auth may be injected upstream and no local OPENAI_API_KEY is required.
+    if os.environ.get("SIE_AUTOPPT_REQUIRE_API_KEY", "").strip().lower() in {"1", "true", "yes"}:
+        hostname = (urlparse(base_url).hostname or "").lower()
+        return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+    return True
+
+
+def _local_probe_paths(base_url: str) -> tuple[str, ...]:
+    trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/v1"):
+        return (trimmed + "/models",)
+    return (trimmed + "/models", trimmed + "/v1/models")
+
+
+def _probe_local_openai_compat(url: str, timeout_sec: float = 0.35) -> bool:
+    req = request.Request(url, method="GET")
+    try:
+        with request.urlopen(req, timeout=timeout_sec) as resp:
+            return 200 <= int(resp.status) < 500
+    except error.HTTPError as exc:
+        return 200 <= int(exc.code) < 500
+    except Exception as exc:
+        LOGGER.debug("local OpenAI-compatible probe failed for %s: %s", url, exc)
+        return False
+
+
+@lru_cache(maxsize=1)
+def _discover_local_base_url() -> str:
+    if os.environ.get("SIE_AUTOPPT_DISABLE_LOCAL_AI_DISCOVERY", "").strip().lower() in {"1", "true", "yes"}:
+        return ""
+
+    candidates = (
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:3000/v1",
+        "http://127.0.0.1:8000/v1",
+        "http://127.0.0.1:8080/v1",
+        "http://127.0.0.1:1234/v1",
+        "http://localhost:11434/v1",
+        "http://localhost:3000/v1",
+    )
+    for base_url in candidates:
+        for probe_url in _local_probe_paths(base_url):
+            if _probe_local_openai_compat(probe_url):
+                return base_url.rstrip("/")
+    return ""
 
 
 def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesConfig:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key and not _allows_empty_api_key(os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")):
-        raise OpenAIConfigurationError("OPENAI_API_KEY is required for AI planning.")
+    configured_base_url = os.environ.get("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if configured_base_url:
+        base_url = configured_base_url
+    elif api_key:
+        base_url = "https://api.openai.com/v1"
+    else:
+        base_url = _discover_local_base_url() or "https://api.openai.com/v1"
 
-    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    if not api_key and not _allows_empty_api_key(base_url):
+        raise OpenAIConfigurationError(
+            "OPENAI_API_KEY is required because SIE_AUTOPPT_REQUIRE_API_KEY=1 is enabled. "
+            "Set OPENAI_API_KEY, or disable SIE_AUTOPPT_REQUIRE_API_KEY, or use a localhost gateway."
+        )
+
     if not base_url:
         raise OpenAIConfigurationError("OPENAI_BASE_URL must not be empty.")
     api_style = infer_llm_api_style(base_url, configured_style=os.environ.get("SIE_AUTOPPT_LLM_API_STYLE"))
@@ -76,6 +126,37 @@ def load_openai_responses_config(model: str | None = None) -> OpenAIResponsesCon
         organization=os.environ.get("OPENAI_ORG_ID", "").strip() or None,
         project=os.environ.get("OPENAI_PROJECT_ID", "").strip() or None,
     )
+
+
+def load_anthropic_vision_config(model: str | None = None) -> AnthropicVisionConfig:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").strip().rstrip("/")
+    resolved_model = (model or os.environ.get("SIE_AUTOPPT_CLAUDE_MODEL", "claude-3-7-sonnet-latest")).strip()
+    if not api_key:
+        raise OpenAIConfigurationError(
+            "ANTHROPIC_API_KEY is required for Claude vision review. "
+            "Set ANTHROPIC_API_KEY or switch provider to OpenAI."
+        )
+    if not base_url:
+        raise OpenAIConfigurationError("ANTHROPIC_BASE_URL must not be empty.")
+    return AnthropicVisionConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=resolved_model,
+        timeout_sec=DEFAULT_AI_TIMEOUT_SEC,
+    )
+
+
+def infer_visual_review_provider(model: str | None, provider: str | None = None) -> str:
+    explicit = str(provider or "").strip().lower()
+    if explicit in {"openai", "claude"}:
+        return explicit
+    if explicit and explicit != "auto":
+        raise ValueError("vision provider must be one of: auto, openai, claude")
+    normalized_model = str(model or "").strip().lower()
+    if normalized_model.startswith("claude"):
+        return "claude"
+    return "openai"
 
 
 def extract_text_from_responses_payload(payload: dict[str, Any]) -> str:
@@ -196,6 +277,21 @@ class OpenAIResponsesClient:
             schema=schema,
         )
 
+    async def acreate_structured_json(
+        self,
+        developer_prompt: str,
+        user_prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self.create_structured_json,
+            developer_prompt=developer_prompt,
+            user_prompt=user_prompt,
+            schema_name=schema_name,
+            schema=schema,
+        )
+
     def create_structured_json_with_user_items(
         self,
         developer_prompt: str,
@@ -222,6 +318,45 @@ class OpenAIResponsesClient:
                     user_items=user_items,
                 )
             raise
+
+    async def acreate_structured_json_with_user_items(
+        self,
+        developer_prompt: str,
+        user_items: list[dict[str, Any]],
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self.create_structured_json_with_user_items,
+            developer_prompt=developer_prompt,
+            user_items=user_items,
+            schema_name=schema_name,
+            schema=schema,
+        )
+
+    async def acreate_structured_json_batch(
+        self,
+        requests: list[dict[str, Any]],
+        *,
+        concurrency: int = 4,
+    ) -> list[dict[str, Any]]:
+        if not requests:
+            return []
+        bounded = max(1, int(concurrency))
+        semaphore = asyncio.Semaphore(bounded)
+        results: list[dict[str, Any] | None] = [None] * len(requests)
+
+        async def _run(index: int, request_item: dict[str, Any]) -> None:
+            async with semaphore:
+                results[index] = await self.acreate_structured_json_with_user_items(
+                    developer_prompt=str(request_item["developer_prompt"]),
+                    user_items=list(request_item["user_items"]),
+                    schema_name=str(request_item["schema_name"]),
+                    schema=dict(request_item["schema"]),
+                )
+
+        await asyncio.gather(*(_run(index, item) for index, item in enumerate(requests)))
+        return [item for item in results if item is not None]
 
     def _create_responses_json(
         self,
@@ -326,6 +461,8 @@ class OpenAIResponsesClient:
         max_retries = 3
 
         for attempt in range(max_retries):
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = self._start_progress_heartbeat(route=route, stop_event=heartbeat_stop)
             try:
                 with request.urlopen(req, timeout=self._config.timeout_sec) as resp:
                     response_body = resp.read().decode("utf-8")
@@ -349,6 +486,10 @@ class OpenAIResponsesClient:
                     time.sleep(self._retry_delay_seconds(attempt=attempt))
                     continue
                 raise OpenAIResponsesError(f"Responses API request failed: {exc.reason}") from exc
+            finally:
+                heartbeat_stop.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=0.2)
 
         raise OpenAIResponsesError(f"Responses API request failed after {max_retries} retries")
 
@@ -371,6 +512,31 @@ class OpenAIResponsesClient:
         if self._config.project:
             headers["OpenAI-Project"] = self._config.project
         return headers
+
+    def _start_progress_heartbeat(self, *, route: str, stop_event: threading.Event) -> threading.Thread | None:
+        enabled = os.environ.get("SIE_AUTOPPT_STREAM_PROGRESS", "").strip().lower() in {"1", "true", "yes"}
+        if not enabled:
+            return None
+        interval_raw = os.environ.get("SIE_AUTOPPT_STREAM_PROGRESS_INTERVAL_SEC", "").strip()
+        try:
+            interval = float(interval_raw) if interval_raw else 3.0
+        except ValueError:
+            interval = 3.0
+        interval = min(10.0, max(1.0, interval))
+
+        started = time.time()
+
+        def _worker() -> None:
+            while not stop_event.wait(interval):
+                elapsed = time.time() - started
+                print(
+                    f"progress: waiting for AI response {route} ({elapsed:.1f}s elapsed)",
+                    flush=True,
+                )
+
+        thread = threading.Thread(target=_worker, name="sie-autoppt-llm-heartbeat", daemon=True)
+        thread.start()
+        return thread
 
 
 def _image_path_to_data_url(path: Path) -> str:

@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 from ..schema import TimelineSlide
-from ..theme_loader import ThemeSpec
-from .common import add_blank_slide, add_card, add_page_number, add_textbox, add_timeline_flow, fill_background
+from .common import RenderContext, add_blank_slide, add_card, add_page_number, add_textbox, add_timeline_flow, fill_background
+from .layout_constants import TIMELINE, TITLE_BAND
 
 
-def render_timeline(prs, slide_data: TimelineSlide, theme: ThemeSpec, log, slide_number: int, total_slides: int):
+def render_timeline(ctx: RenderContext, slide_data: TimelineSlide):
+    prs = ctx.prs
+    theme = ctx.theme
+    log = ctx.log
+    slide_number = ctx.slide_number
+    total_slides = ctx.total_slides
     slide = add_blank_slide(prs)
     fill_background(slide, theme)
     add_textbox(
         slide,
-        left=0.78,
-        top=0.5,
-        width=11.7,
-        height=0.55,
+        left=TITLE_BAND.left,
+        top=TITLE_BAND.top,
+        width=TITLE_BAND.width,
+        height=TITLE_BAND.height,
         text=slide_data.title,
         font_name=theme.fonts.title,
         font_size=theme.font_sizes.title,
@@ -23,10 +28,10 @@ def render_timeline(prs, slide_data: TimelineSlide, theme: ThemeSpec, log, slide
     if slide_data.heading:
         add_textbox(
             slide,
-            left=0.82,
-            top=1.08,
-            width=11.5,
-            height=0.28,
+            left=TITLE_BAND.subtitle_left,
+            top=TIMELINE.subtitle_top,
+            width=TITLE_BAND.subtitle_width,
+            height=TITLE_BAND.subtitle_height,
             text=slide_data.heading,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small + 1,
@@ -34,14 +39,14 @@ def render_timeline(prs, slide_data: TimelineSlide, theme: ThemeSpec, log, slide
             bold=True,
         )
 
-    add_card(slide, 0.78, 1.42, 11.72, 4.8, theme)
+    add_card(slide, TIMELINE.card.left, TIMELINE.card.top, TIMELINE.card.width, TIMELINE.card.height, theme)
     add_timeline_flow(
         slide,
         [(stage.title, stage.detail or stage.title) for stage in slide_data.stages],
-        left=1.0,
-        top=1.7,
-        width=11.1,
-        height=4.1,
+        left=TIMELINE.flow_left,
+        top=TIMELINE.flow_top,
+        width=TIMELINE.flow_width,
+        height=TIMELINE.flow_height,
         theme=theme,
     )
     log.info(f"{slide_data.slide_id}: rendered semantic timeline layout.")

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
@@ -43,7 +43,7 @@ GENERIC_CLOSING_TITLES = frozenset(
         "谢谢",
         "感谢",
         "感谢聆听",
-        "谢 谢",
+        "谢谢大家",
         "thanks",
         "thankyou",
         "q&a",
@@ -125,6 +125,22 @@ class QualityGateResult:
         }
 
     @property
+    def blocking(self) -> bool:
+        return bool(self.errors)
+
+    @property
+    def soft_issue_count(self) -> int:
+        return len(self.warnings) + len(self.high)
+
+    @property
+    def statistics(self) -> dict[str, int | bool]:
+        return {
+            **self.summary,
+            "soft_issue_count": self.soft_issue_count,
+            "blocking": self.blocking,
+        }
+
+    @property
     def slide_count(self) -> int:
         if self.validated_deck is None:
             return 0
@@ -141,6 +157,8 @@ class QualityGateResult:
             "high": [issue.to_dict() for issue in self.high],
             "errors": [issue.to_dict() for issue in self.errors],
             "summary": self.summary,
+            "statistics": self.statistics,
+            "blocking": self.blocking,
             "auto_score": self.auto_score,
             "auto_level": self.auto_level,
         }
@@ -154,20 +172,33 @@ def _count_hanzi(text: str) -> int:
 DIRECTORY_STYLE_EXACT_TITLES = RULE_CONFIG.directory_style.exact_titles
 DIRECTORY_STYLE_SUFFIXES = RULE_CONFIG.directory_style.suffixes
 CONCLUSION_MARKERS = RULE_CONFIG.directory_style.conclusion_markers
+REQUIRED_THEME_NAME = "sie_consulting_fixed"
+
+
+def _content_rules():
+    return RULE_CONFIG.content_thresholds
 
 
 def _normalize_title_for_pattern(title: str) -> str:
-    return re.sub(r"[\s:：，,。.、（）()\-]+", "", title)
+    return re.sub(r"[\s:：,，。、“”()（）-]+", "", title)
 
 
 def _normalize_free_text(text: str) -> str:
     return re.sub(r"[\W_]+", "", str(text or "").strip().lower(), flags=re.UNICODE)
 
 
+def _contains_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", str(text or "")))
+
+
+def _contains_latin_word(text: str) -> bool:
+    return bool(re.search(r"[A-Za-z]{3,}", str(text or "")))
+
+
 def _looks_conclusion_oriented(title: str) -> bool:
     if any(marker in title for marker in CONCLUSION_MARKERS):
         return True
-    return any(punct in title for punct in ("：", "，", ":")) and _count_hanzi(title) >= 10
+    return any(punct in title for punct in ("：", "，", ":")) and _count_hanzi(title) >= _content_rules().conclusion_title_min_hanzi
 
 
 def _has_directory_style_title(title: str) -> bool:
@@ -179,48 +210,60 @@ def _has_directory_style_title(title: str) -> bool:
         return False
     if normalized in DIRECTORY_STYLE_EXACT_TITLES:
         return True
-    return _count_hanzi(normalized) <= 8 and any(normalized.endswith(suffix) for suffix in DIRECTORY_STYLE_SUFFIXES)
+    return _count_hanzi(normalized) <= _content_rules().directory_style_max_hanzi and any(
+        normalized.endswith(suffix) for suffix in DIRECTORY_STYLE_SUFFIXES
+    )
 
 
 def _title_warnings(slide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     hanzi_count = _count_hanzi(slide.title)
+    title_rules = RULE_CONFIG.title_lengths
 
     # Error level: title too long (severe overflow risk)
-    if hanzi_count > 28:
+    if hanzi_count > title_rules.error_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_ERROR,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 28-character error threshold (severe overflow risk).",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.error_threshold}-character error threshold (severe overflow risk)."
+                ),
             )
         )
     # High warning: title very long
-    elif hanzi_count > 24:
+    elif hanzi_count > title_rules.high_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_HIGH,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 24-character high-warning threshold.",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.high_threshold}-character high-warning threshold."
+                ),
             )
         )
     # Warning: title longer than recommended
-    elif hanzi_count > 20:
+    elif hanzi_count > title_rules.warning_threshold:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"title contains {hanzi_count} Chinese characters, which exceeds the 20-character recommended threshold.",
+                message=(
+                    f"title contains {hanzi_count} Chinese characters, which exceeds the "
+                    f"{title_rules.warning_threshold}-character recommended threshold."
+                ),
             )
         )
 
-    # Warning: directory-style title (lacks conclusion orientation)
+    # Error: directory-style title is not allowed by SIE consulting guideline.
     if _has_directory_style_title(slide.title):
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
-                warning_level=WARNING_LEVEL_WARNING,
-                message=f"title '{slide.title}' appears to be directory-style; consider making it more conclusion-oriented.",
+                warning_level=WARNING_LEVEL_ERROR,
+                message=f"title '{slide.title}' appears to be directory-style; use an assertion-oriented title.",
             )
         )
 
@@ -230,44 +273,58 @@ def _title_warnings(slide) -> list[ContentWarning]:
 def _title_content_warnings(slide: TitleContentSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     bullet_count = len(slide.content)
+    bullet_rules = RULE_CONFIG.bullets
+    hard_min = max(1, bullet_rules.min_items)
+    hard_max = max(hard_min, bullet_rules.max_items)
+    recommended_min = max(hard_min, bullet_rules.recommended_min_items)
+    recommended_max = max(recommended_min, min(hard_max, bullet_rules.recommended_max_items))
 
-    # Error level: bullet count severely out of range
-    if bullet_count < 1 or bullet_count > 7:
+    # Error level: bullet count outside hard range
+    if bullet_count < hard_min or bullet_count > hard_max:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_ERROR,
-                message=f"title_content has {bullet_count} bullet items; must be between 1-7.",
+                message=f"title_content has {bullet_count} bullet items; must be between {hard_min}-{hard_max}.",
             )
         )
     # Warning: bullet count outside recommended range
-    elif bullet_count < 2 or bullet_count > 6:
+    elif bullet_count < recommended_min or bullet_count > recommended_max:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"title_content has {bullet_count} bullet items; recommended range is 2-6.",
+                message=(
+                    f"title_content has {bullet_count} bullet items; recommended range is "
+                    f"{recommended_min}-{recommended_max}."
+                ),
             )
         )
 
     for index, item in enumerate(slide.content, start=1):
         item_length = len(item)
         # Error level: bullet extremely long (severe overflow risk)
-        if item_length > 50:
+        if item_length > _content_rules().title_content_item_error_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_ERROR,
-                    message=f"title_content bullet {index} length is {item_length}, which exceeds 50 characters (severe overflow risk).",
+                    message=(
+                        f"title_content bullet {index} length is {item_length}, which exceeds "
+                        f"{_content_rules().title_content_item_error_length} characters (severe overflow risk)."
+                    ),
                 )
             )
         # Warning: bullet longer than recommended
-        elif item_length > 35:
+        elif item_length > _content_rules().title_content_item_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"title_content bullet {index} length is {item_length}, which exceeds 35 characters (recommended threshold).",
+                    message=(
+                        f"title_content bullet {index} length is {item_length}, which exceeds "
+                        f"{_content_rules().title_content_item_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
 
@@ -278,28 +335,37 @@ def _two_columns_warnings(slide: TwoColumnsSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     left_count = len(slide.left.items)
     right_count = len(slide.right.items)
-    if left_count > 5:
+    if left_count > _content_rules().two_columns_max_items_per_column:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"two_columns left column has {left_count} items, which exceeds 5.",
+                message=(
+                    f"two_columns left column has {left_count} items, which exceeds "
+                    f"{_content_rules().two_columns_max_items_per_column}."
+                ),
             )
         )
-    if right_count > 5:
+    if right_count > _content_rules().two_columns_max_items_per_column:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"two_columns right column has {right_count} items, which exceeds 5.",
+                message=(
+                    f"two_columns right column has {right_count} items, which exceeds "
+                    f"{_content_rules().two_columns_max_items_per_column}."
+                ),
             )
         )
-    if abs(left_count - right_count) > 3:
+    if abs(left_count - right_count) > _content_rules().two_columns_max_item_gap:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"two_columns item count gap is {abs(left_count - right_count)}, which exceeds 3.",
+                message=(
+                    f"two_columns item count gap is {abs(left_count - right_count)}, which exceeds "
+                    f"{_content_rules().two_columns_max_item_gap}."
+                ),
             )
         )
     return warnings
@@ -308,32 +374,41 @@ def _two_columns_warnings(slide: TwoColumnsSlide) -> list[ContentWarning]:
 def _title_image_warnings(slide: TitleImageSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
     content_count = len(slide.content)
-    if content_count > 4:
+    if content_count > _content_rules().title_image_max_items:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"title_image has {content_count} content items, which exceeds 4.",
+                message=(
+                    f"title_image has {content_count} content items, which exceeds "
+                    f"{_content_rules().title_image_max_items}."
+                ),
             )
         )
     for index, item in enumerate(slide.content, start=1):
         item_length = len(item)
         # Error level: content extremely long
-        if item_length > 50:
+        if item_length > _content_rules().title_image_item_error_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_ERROR,
-                    message=f"title_image content {index} length is {item_length}, which exceeds 50 characters (severe overflow risk).",
+                    message=(
+                        f"title_image content {index} length is {item_length}, which exceeds "
+                        f"{_content_rules().title_image_item_error_length} characters (severe overflow risk)."
+                    ),
                 )
             )
         # Warning: content longer than recommended
-        elif item_length > 35:
+        elif item_length > _content_rules().title_image_item_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"title_image content {index} length is {item_length}, which exceeds 35 characters (recommended threshold).",
+                    message=(
+                        f"title_image content {index} length is {item_length}, which exceeds "
+                        f"{_content_rules().title_image_item_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
     return warnings
@@ -408,7 +483,7 @@ def _slide_repetition_fragments(slide) -> set[str]:
     signatures: set[str] = set()
     for fragment in _iter_slide_text_fragments(slide)[1:]:
         normalized = _normalize_free_text(fragment)
-        if len(normalized) >= 6:
+        if len(normalized) >= _content_rules().repetition_fragment_min_length:
             signatures.add(normalized)
     return signatures
 
@@ -455,21 +530,27 @@ def _insight_warnings(slide) -> list[ContentWarning]:
 
 def _timeline_warnings(slide: TimelineSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
-    if len(slide.stages) > 5:
+    if len(slide.stages) > _content_rules().timeline_max_stages:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"timeline has {len(slide.stages)} stages, which exceeds the 5-stage recommended threshold.",
+                message=(
+                    f"timeline has {len(slide.stages)} stages, which exceeds the "
+                    f"{_content_rules().timeline_max_stages}-stage recommended threshold."
+                ),
             )
         )
     for index, stage in enumerate(slide.stages, start=1):
-        if stage.detail and len(stage.detail) > 45:
+        if stage.detail and len(stage.detail) > _content_rules().timeline_stage_detail_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"timeline stage {index} detail length is {len(stage.detail)}, which exceeds 45 characters (recommended threshold).",
+                    message=(
+                        f"timeline stage {index} detail length is {len(stage.detail)}, which exceeds "
+                        f"{_content_rules().timeline_stage_detail_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
     return warnings
@@ -477,29 +558,38 @@ def _timeline_warnings(slide: TimelineSlide) -> list[ContentWarning]:
 
 def _stats_dashboard_warnings(slide: StatsDashboardSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
-    if len(slide.metrics) > 4:
+    if len(slide.metrics) > _content_rules().stats_dashboard_max_metrics:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"stats_dashboard has {len(slide.metrics)} metrics, which exceeds 4.",
+                message=(
+                    f"stats_dashboard has {len(slide.metrics)} metrics, which exceeds "
+                    f"{_content_rules().stats_dashboard_max_metrics}."
+                ),
             )
         )
-    if len(slide.insights) > 3:
+    if len(slide.insights) > _content_rules().stats_dashboard_max_insights:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"stats_dashboard has {len(slide.insights)} insight items, which exceeds 3.",
+                message=(
+                    f"stats_dashboard has {len(slide.insights)} insight items, which exceeds "
+                    f"{_content_rules().stats_dashboard_max_insights}."
+                ),
             )
         )
     for index, metric in enumerate(slide.metrics, start=1):
-        if metric.note and len(metric.note) > 35:
+        if metric.note and len(metric.note) > _content_rules().stats_dashboard_metric_note_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"stats_dashboard metric {index} note length is {len(metric.note)}, which exceeds 35 characters (recommended threshold).",
+                    message=(
+                        f"stats_dashboard metric {index} note length is {len(metric.note)}, which exceeds "
+                        f"{_content_rules().stats_dashboard_metric_note_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
     return warnings
@@ -507,21 +597,27 @@ def _stats_dashboard_warnings(slide: StatsDashboardSlide) -> list[ContentWarning
 
 def _matrix_grid_warnings(slide: MatrixGridSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
-    if len(slide.cells) < 4:
+    if len(slide.cells) < _content_rules().matrix_grid_recommended_min_cells:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"matrix_grid has {len(slide.cells)} cells; 4 cells are recommended for a balanced quadrant view.",
+                message=(
+                    f"matrix_grid has {len(slide.cells)} cells; {_content_rules().matrix_grid_recommended_min_cells} "
+                    "cells are recommended for a balanced quadrant view."
+                ),
             )
         )
     for index, cell in enumerate(slide.cells, start=1):
-        if cell.body and len(cell.body) > 45:
+        if cell.body and len(cell.body) > _content_rules().matrix_grid_cell_body_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"matrix_grid cell {index} body length is {len(cell.body)}, which exceeds 45 characters (recommended threshold).",
+                    message=(
+                        f"matrix_grid cell {index} body length is {len(cell.body)}, which exceeds "
+                        f"{_content_rules().matrix_grid_cell_body_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
     return warnings
@@ -529,29 +625,38 @@ def _matrix_grid_warnings(slide: MatrixGridSlide) -> list[ContentWarning]:
 
 def _cards_grid_warnings(slide: CardsGridSlide) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
-    if len(slide.cards) > 3:
+    if len(slide.cards) > _content_rules().cards_grid_max_cards:
         warnings.append(
             ContentWarning(
                 slide_id=slide.slide_id,
                 warning_level=WARNING_LEVEL_WARNING,
-                message=f"cards_grid has {len(slide.cards)} cards, which exceeds 3.",
+                message=(
+                    f"cards_grid has {len(slide.cards)} cards, which exceeds "
+                    f"{_content_rules().cards_grid_max_cards}."
+                ),
             )
         )
     for index, card in enumerate(slide.cards, start=1):
-        if card.body and len(card.body) > 50:
+        if card.body and len(card.body) > _content_rules().cards_grid_card_body_error_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_ERROR,
-                    message=f"cards_grid card {index} body length is {len(card.body)}, which exceeds 50 characters (severe overflow risk).",
+                    message=(
+                        f"cards_grid card {index} body length is {len(card.body)}, which exceeds "
+                        f"{_content_rules().cards_grid_card_body_error_length} characters (severe overflow risk)."
+                    ),
                 )
             )
-        elif card.body and len(card.body) > 35:
+        elif card.body and len(card.body) > _content_rules().cards_grid_card_body_warning_length:
             warnings.append(
                 ContentWarning(
                     slide_id=slide.slide_id,
                     warning_level=WARNING_LEVEL_WARNING,
-                    message=f"cards_grid card {index} body length is {len(card.body)}, which exceeds 35 characters (recommended threshold).",
+                    message=(
+                        f"cards_grid card {index} body length is {len(card.body)}, which exceeds "
+                        f"{_content_rules().cards_grid_card_body_warning_length} characters (recommended threshold)."
+                    ),
                 )
             )
     return warnings
@@ -579,6 +684,14 @@ def check_slide_content(slide) -> list[ContentWarning]:
 
 def check_deck_content(deck: DeckDocument) -> list[ContentWarning]:
     warnings: list[ContentWarning] = []
+    if deck.meta.theme != REQUIRED_THEME_NAME:
+        warnings.append(
+            ContentWarning(
+                slide_id="meta",
+                warning_level=WARNING_LEVEL_ERROR,
+                message=f"deck theme must be '{REQUIRED_THEME_NAME}', got '{deck.meta.theme}'.",
+            )
+        )
     for slide in deck.slides:
         warnings.extend(check_slide_content(slide))
     warnings.extend(_check_deck_structure(deck))
@@ -644,7 +757,36 @@ def _check_deck_structure(deck: DeckDocument) -> list[ContentWarning]:
         )
 
     warnings.extend(_check_deck_repetition(deck))
+    warnings.extend(_check_language_consistency(deck))
 
+    return warnings
+
+
+def _check_language_consistency(deck: DeckDocument) -> list[ContentWarning]:
+    warnings: list[ContentWarning] = []
+    expected = str(deck.meta.language or "").strip().lower()
+    if expected.startswith("zh"):
+        for slide in deck.slides:
+            fragments = _iter_slide_text_fragments(slide)
+            if any(_contains_latin_word(item) for item in fragments if not re.fullmatch(r"(AI|KPI|ROI|API|OKR)", item)):
+                warnings.append(
+                    ContentWarning(
+                        slide_id=slide.slide_id,
+                        warning_level=WARNING_LEVEL_WARNING,
+                        message="slide contains mixed-language content; expected zh-CN dominant text.",
+                    )
+                )
+    elif expected.startswith("en"):
+        for slide in deck.slides:
+            fragments = _iter_slide_text_fragments(slide)
+            if any(_contains_cjk(item) for item in fragments):
+                warnings.append(
+                    ContentWarning(
+                        slide_id=slide.slide_id,
+                        warning_level=WARNING_LEVEL_WARNING,
+                        message="slide contains mixed-language content; expected en-US dominant text.",
+                    )
+                )
     return warnings
 
 
@@ -670,7 +812,7 @@ def _check_deck_repetition(deck: DeckDocument) -> list[ContentWarning]:
 
     for previous_slide, current_slide in zip(deck.slides, deck.slides[1:]):
         overlap = _slide_repetition_fragments(previous_slide) & _slide_repetition_fragments(current_slide)
-        if len(overlap) >= 2:
+        if len(overlap) >= _content_rules().repetition_adjacent_overlap_warning_count:
             warnings.append(
                 ContentWarning(
                     slide_id=current_slide.slide_id,
@@ -704,7 +846,7 @@ def calculate_auto_score(
     """Score rule-based content risk for gating, not for subjective visual QA."""
     scoring = RULE_CONFIG.scoring
     # The penalty weights come from default_rules.toml so the gate policy stays
-    # configurable and intentionally separate from visual_review's 5x5 scorecard.
+    # configurable and intentionally separate from visual_review's subjective scorecard.
     weighted_penalty = (
         warning_count * scoring.warning_weight
         + high_count * scoring.high_weight
@@ -797,3 +939,5 @@ def write_quality_gate_result(result: QualityGateResult, output_path: str | Path
         encoding="utf-8",
     )
     return target_path
+
+

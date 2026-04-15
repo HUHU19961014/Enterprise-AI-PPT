@@ -84,3 +84,37 @@ baseline_slide_count = 6
 excellent_threshold = 90
 usable_threshold = 75
 review_threshold = 60
+
+[quality.titles]
+error_threshold = 28
+high_threshold = 24
+warning_threshold = 20
+
+[quality.bullets]
+min_items = 1
+max_items = 6
+recommended_min_items = 2
+recommended_max_items = 6
+
+[quality.content_thresholds]
+conclusion_title_min_hanzi = 10
+directory_style_max_hanzi = 8
+title_content_item_error_length = 50
+title_content_item_warning_length = 35
+two_columns_max_items_per_column = 5
+two_columns_max_item_gap = 3
+title_image_max_items = 4
+title_image_item_error_length = 50
+title_image_item_warning_length = 35
+timeline_max_stages = 5
+timeline_stage_detail_warning_length = 45
+stats_dashboard_max_metrics = 4
+stats_dashboard_max_insights = 3
+stats_dashboard_metric_note_warning_length = 35
+matrix_grid_recommended_min_cells = 4
+matrix_grid_cell_body_warning_length = 45
+cards_grid_max_cards = 3
+cards_grid_card_body_error_length = 50
+cards_grid_card_body_warning_length = 35
+repetition_fragment_min_length = 6
+repetition_adjacent_overlap_warning_count = 2

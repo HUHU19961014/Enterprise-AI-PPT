@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import Any
 
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
@@ -9,6 +11,15 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
 from ..theme_loader import ThemeSpec
+
+
+@dataclass(frozen=True)
+class RenderContext:
+    prs: Any
+    theme: ThemeSpec
+    log: Any
+    slide_number: int
+    total_slides: int
 
 
 TIMELINE_PREFIX_PATTERN = re.compile(
@@ -285,7 +296,7 @@ def add_timeline_flow(
             text=label,
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small + 1,
-            color_hex="#FFFFFF",
+            color_hex=theme.colors.card_bg,
             bold=True,
             align=PP_ALIGN.CENTER,
             vertical_anchor=MSO_ANCHOR.MIDDLE,
@@ -356,7 +367,7 @@ def add_comparison_table(
             text=heading,
             font_name=theme.fonts.title,
             font_size=theme.font_sizes.subtitle,
-            color_hex="#FFFFFF",
+            color_hex=theme.colors.card_bg,
             bold=True,
             align=PP_ALIGN.CENTER,
             vertical_anchor=MSO_ANCHOR.MIDDLE,
@@ -378,7 +389,7 @@ def add_comparison_table(
                 Inches(row_height),
             )
             cell.fill.solid()
-            cell.fill.fore_color.rgb = rgb("#F7F9FC" if col_index == 0 else "#FBFCFE")
+            cell.fill.fore_color.rgb = rgb(theme.colors.card_bg if col_index == 0 else theme.colors.bg)
             cell.line.color.rgb = rgb(theme.colors.line)
             add_textbox(
                 slide,
@@ -427,7 +438,7 @@ def add_architecture_placeholder(
     layer_count = len(layers)
     gap = 0.14
     layer_height = min(0.82, (height - 0.72 - gap * (layer_count - 1)) / max(layer_count, 1))
-    palette = ["#FCE6EA", "#F7EEF8", "#EDF3FF", "#EAF6F1"]
+    palette = [theme.colors.card_bg, theme.colors.bg, theme.colors.card_bg, theme.colors.bg]
 
     for index, layer_text in enumerate(layers[:4]):
         y = top + 0.48 + index * (layer_height + gap)
@@ -461,7 +472,7 @@ def add_architecture_placeholder(
             text=f"L{index + 1}",
             font_name=theme.fonts.body,
             font_size=theme.font_sizes.small,
-            color_hex="#FFFFFF",
+            color_hex=theme.colors.card_bg,
             bold=True,
             align=PP_ALIGN.CENTER,
             vertical_anchor=MSO_ANCHOR.MIDDLE,
@@ -520,7 +531,7 @@ def add_capability_map(
         text=caption or "Map",
         font_name=theme.fonts.body,
         font_size=theme.font_sizes.small + 1,
-        color_hex="#FFFFFF",
+        color_hex=theme.colors.card_bg,
         bold=True,
         align=PP_ALIGN.CENTER,
         vertical_anchor=MSO_ANCHOR.MIDDLE,
@@ -591,7 +602,7 @@ def add_local_image_or_placeholder(
     if image_mode == "local_path":
         log.warn(f"image file not found, using placeholder instead: {image_path}")
     placeholder = add_card(slide, left, top, width, height, theme)
-    placeholder.fill.fore_color.rgb = rgb("#FAFAFA")
+    placeholder.fill.fore_color.rgb = rgb(theme.colors.bg)
     placeholder.line.color.rgb = rgb(theme.colors.line)
     add_textbox(
         slide,
