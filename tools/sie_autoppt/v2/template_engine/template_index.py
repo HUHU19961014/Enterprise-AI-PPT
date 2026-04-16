@@ -83,6 +83,36 @@ def _infer_layout_content_type(layout_id: str, summary: str, keywords: tuple[str
     return "chart"
 
 
+def _build_builtin_fallback_templates() -> list[TemplateDescriptor]:
+    templates: list[TemplateDescriptor] = []
+    seed: list[tuple[str, str]] = [
+        ("timeline", "timeline"),
+        ("comparison", "comparison"),
+        ("matrix", "matrix"),
+        ("stats", "stats"),
+        ("image_grid", "image_grid"),
+        ("cards", "cards"),
+        ("chart", "chart"),
+    ]
+    for index in range(1, 43):
+        content_type, keyword = seed[(index - 1) % len(seed)]
+        template_id = f"builtin::{content_type}_{index:02d}"
+        if index % 2 == 0:
+            template_path = f"projects/ppt-master/skills/ppt-master/templates/layouts/{content_type}_{index:02d}"
+        else:
+            template_path = f"projects/ppt-master/skills/ppt-master/templates/charts/{content_type}_{index:02d}.svg"
+        templates.append(
+            TemplateDescriptor(
+                template_id=template_id,
+                content_type=content_type,
+                template_path=template_path,
+                styles=_infer_styles(content_type),
+                keywords=(keyword, "builtin", "fallback"),
+            )
+        )
+    return templates
+
+
 @lru_cache(maxsize=1)
 def build_default_template_index() -> TemplateIndex:
     charts_index = _charts_index_path()
@@ -137,5 +167,5 @@ def build_default_template_index() -> TemplateIndex:
                 )
 
     if not templates:
-        return TemplateIndex(templates=tuple())
+        templates = _build_builtin_fallback_templates()
     return TemplateIndex(templates=tuple(templates))

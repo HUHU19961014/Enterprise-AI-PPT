@@ -18,7 +18,8 @@ from ..llm_openai import OpenAIResponsesClient, load_openai_responses_config
 from ..plugins import resolve_model_adapter
 from ..prompting import render_prompt_template
 from .content_rewriter import rewrite_deck, write_rewrite_log
-from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
+from .semantic_compiler import compile_semantic_deck_payload
+from .semantic_schema_builder import build_semantic_deck_schema
 from .io import (
     default_deck_output_path,
     default_log_output_path,
@@ -887,7 +888,6 @@ def make_v2_ppt(
     ppt_output: Path | None = None,
     outline_path: Path | None = None,
 ) -> V2MakeArtifacts:
-    _ensure_svg_export_dependency()
     final_output_dir = output_dir or DEFAULT_OUTPUT_DIR
     normalized_language = normalize_language_code(language)
     resolved_generation_mode = normalize_generation_mode(generation_mode)

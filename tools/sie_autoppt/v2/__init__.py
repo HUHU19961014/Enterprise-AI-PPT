@@ -1,5 +1,4 @@
 from .content_rewriter import RewriteAction, RewriteDeckResult, rewrite_deck, rewrite_slide, write_rewrite_log
-from .deck_director import build_semantic_deck_schema, compile_semantic_deck_payload
 from .io import (
     build_deck_output_path,
     build_log_output_path,
@@ -19,6 +18,8 @@ from .io import (
     write_outline_document,
     write_semantic_document,
 )
+from .semantic_compiler import compile_semantic_deck_payload
+from .semantic_schema_builder import build_semantic_deck_schema
 from .ppt_engine import RenderArtifacts, generate_ppt
 from .quality_checks import (
     AutoScoreResult,

@@ -325,6 +325,21 @@ class VisualScoreAsyncTests(unittest.IsolatedAsyncioTestCase):
             with patch(
                 "tools.sie_autoppt.visual_score.OpenAIResponsesClient.acreate_structured_json_batch",
                 new=AsyncMock(return_value=payloads),
+            ), patch(
+                "tools.sie_autoppt.visual_score.load_openai_responses_config",
+                return_value=type(
+                    "FakeCfg",
+                    (),
+                    {
+                        "api_key": "test-key",
+                        "base_url": "https://api.openai.com/v1",
+                        "model": "test-model",
+                        "timeout_sec": 30,
+                        "reasoning_effort": "low",
+                        "text_verbosity": "low",
+                        "api_style": "responses",
+                    },
+                )(),
             ):
                 reviews = await review_visual_drafts_with_ai_batch(items, model="test-model", concurrency=2)
         self.assertEqual(len(reviews), 2)

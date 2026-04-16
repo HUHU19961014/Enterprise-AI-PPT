@@ -33,14 +33,33 @@ def _workspace_tmpdir():
 class V2ServiceTests(unittest.TestCase):
     def test_make_v2_ppt_fails_fast_when_svg_export_script_missing(self):
         missing_script = Path(__file__).resolve().parents[1] / ".tmp_missing_svg_to_pptx.py"
+        outline = OutlineDocument.model_validate(
+            {
+                "pages": [
+                    {"page_no": 1, "title": "Context", "goal": "Set context."},
+                    {"page_no": 2, "title": "Plan", "goal": "Present the roadmap."},
+                ]
+            }
+        )
+        semantic_payload = {
+            "meta": {"title": "AI strategy", "theme": "sie_consulting_fixed", "language": "zh-CN", "author": "AI", "version": "2.0"},
+            "slides": [{"slide_id": "s1", "title": "Conclusion", "intent": "conclusion", "blocks": [{"kind": "statement", "text": "Focus on one chain first."}]}],
+        }
         with patch.object(services_module, "DEFAULT_SVG_TO_PPTX_SCRIPT_CANDIDATES", (missing_script,)), patch(
-            "tools.sie_autoppt.v2.services.ensure_generation_context"
-        ) as ensure_context:
+            "tools.sie_autoppt.v2.services.ensure_generation_context",
+            return_value=({}, {}),
+        ) as ensure_context, patch(
+            "tools.sie_autoppt.v2.services.generate_outline_with_ai",
+            return_value=outline,
+        ), patch(
+            "tools.sie_autoppt.v2.services.generate_semantic_deck_with_ai",
+            return_value=semantic_payload,
+        ):
             with _workspace_tmpdir() as temp_dir, self.assertRaises(FileNotFoundError) as exc_info:
                 make_v2_ppt(topic="AI strategy", output_dir=Path(temp_dir))
 
-        self.assertIn("svg_to_pptx.py", str(exc_info.exception))
-        ensure_context.assert_not_called()
+        self.assertIn("Unable to locate", str(exc_info.exception))
+        ensure_context.assert_called_once()
 
     def test_run_command_passes_timeout(self):
         completed = type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()

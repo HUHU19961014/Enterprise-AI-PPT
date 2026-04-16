@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
-import shutil
 import sys
-from dataclasses import asdict, replace
 from pathlib import Path
 
 from tools.scenario_generators.sie_onepage_designer import build_onepage_brief_from_structure, build_onepage_slide
@@ -26,29 +23,18 @@ from .cli_v2_commands import V2CommandContext, handle_v2_and_health_command
 from . import cli_routing
 from .config import (
     DEFAULT_OUTPUT_DIR,
-    DEFAULT_OUTPUT_PREFIX,
-    DEFAULT_REFERENCE_BODY,
-    DEFAULT_TEMPLATE,
-    PROJECT_ROOT,
 )
-from .content_service import build_deck_spec_from_structure
-from .deck_spec_io import load_deck_spec, write_deck_spec
+from .deck_spec_io import load_deck_spec
 from .exceptions import (
     CliExecutionError,
-    CliUserInputError,
 )
-from .generator import generate_ppt_artifacts_from_deck_spec
 from .healthcheck import run_ai_healthcheck
 from .llm_openai import (
     OpenAIConfigurationError,
-    OpenAIResponsesClient,
     OpenAIResponsesError,
-    load_openai_responses_config,
 )
-from .models import BodyPageSpec, DeckSpec, StructureSpec
-from .patterns import supported_pattern_ids
+from .models import StructureSpec
 from .structure_service import StructureGenerationRequest, generate_structure_with_ai
-from .types import JSONDict
 from .v2 import (
     build_log_output_path,
     build_ppt_output_path,
@@ -81,7 +67,6 @@ LOGGER = logging.getLogger(__name__)
 WORKFLOW_COMMANDS = (
     "make",
     "onepage",
-    "sie-render",
     "ai-check",
     "clarify",
     "clarify-web",
@@ -100,7 +85,6 @@ WORKFLOW_COMMANDS = (
 PRIMARY_COMMANDS = ("make", "review", "iterate")
 ADVANCED_COMMANDS = (
     "onepage",
-    "sie-render",
     "v2-plan",
     "v2-render",
     "v2-compile",
@@ -118,9 +102,6 @@ COMMAND_ALIASES = {
     "review": "v2-review",
     "iterate": "v2-iterate",
 }
-DEFAULT_EXTERNAL_COMMAND_TIMEOUT_SEC = 120
-
-
 def command_was_explicit(argv: list[str]) -> bool:
     return cli_routing.command_was_explicit(argv, WORKFLOW_COMMANDS)
 
@@ -247,95 +228,6 @@ def resolve_v2_clarified_context(
     )
 
 
-def _build_ai_page_schema(candidate_pattern_ids: tuple[str, ...]) -> dict[str, object]:
-    return {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "minLength": 4, "maxLength": 42},
-            "subtitle": {"type": "string", "minLength": 4, "maxLength": 64},
-            "bullets": {
-                "type": "array",
-                "minItems": 3,
-                "maxItems": 6,
-                "items": {"type": "string", "minLength": 4, "maxLength": 80},
-            },
-            "pattern_id": {"type": "string", "enum": list(candidate_pattern_ids)},
-            "rationale": {"type": "string", "minLength": 12, "maxLength": 200},
-        },
-        "required": ["title", "subtitle", "bullets", "pattern_id", "rationale"],
-        "additionalProperties": False,
-    }
-
-
-def apply_ai_content_layout_to_deck_spec(
-    deck_spec: DeckSpec,
-    *,
-    model: str | None = None,
-) -> tuple[DeckSpec, list[dict[str, object]]]:
-    candidate_pattern_ids = supported_pattern_ids()
-    if not candidate_pattern_ids:
-        raise CliUserInputError("no supported pattern ids available for AI layout routing.")
-
-    client = OpenAIResponsesClient(load_openai_responses_config(model=model or None))
-    schema = _build_ai_page_schema(candidate_pattern_ids)
-    refined_pages: list[BodyPageSpec] = []
-    trace: list[dict[str, object]] = []
-
-    for index, page in enumerate(deck_spec.body_pages, start=1):
-        developer_prompt = (
-            "You are optimizing one SIE PPT body page.\n"
-            "Tasks:\n"
-            "1) tighten title/subtitle for executive clarity,\n"
-            "2) rewrite bullets to concise business evidence,\n"
-            "3) choose the best pattern_id for layout semantics.\n"
-            "Return JSON only."
-        )
-        user_prompt = (
-            f"Deck cover title: {deck_spec.cover_title}\n"
-            f"Page index: {index}\n"
-            f"Current title: {page.title}\n"
-            f"Current subtitle: {page.subtitle}\n"
-            f"Current bullets:\n{chr(10).join(f'- {item}' for item in page.bullets)}\n"
-            f"Current pattern_id: {page.pattern_id}\n"
-            "Constraints: keep business meaning, avoid fluff, fit one-page reading rhythm."
-        )
-        payload = client.create_structured_json(
-            developer_prompt=developer_prompt,
-            user_prompt=user_prompt,
-            schema_name="sie_template_page_ai_refine",
-            schema=schema,
-        )
-
-        new_title = str(payload.get("title", "")).strip()
-        new_subtitle = str(payload.get("subtitle", "")).strip()
-        new_bullets = [str(item).strip() for item in payload.get("bullets", []) if str(item).strip()]
-        new_pattern_id = str(payload.get("pattern_id", "")).strip()
-        rationale = str(payload.get("rationale", "")).strip()
-
-        if not new_title or not new_subtitle or len(new_bullets) < 3 or not new_pattern_id:
-            raise OpenAIResponsesError(f"AI page refinement produced invalid result at page {index}.")
-
-        refined_pages.append(
-            replace(
-                page,
-                title=new_title,
-                subtitle=new_subtitle,
-                bullets=new_bullets[:6],
-                pattern_id=new_pattern_id,
-            )
-        )
-        trace.append(
-            {
-                "page_index": index,
-                "old_pattern_id": page.pattern_id,
-                "new_pattern_id": new_pattern_id,
-                "rationale": rationale,
-            }
-        )
-
-    return replace(deck_spec, body_pages=refined_pages), trace
-
-
 def main():
     parser = build_main_parser()
     raw_argv = sys.argv[1:]
@@ -398,12 +290,6 @@ def main():
             parser=parser,
         )
 
-    template_path = Path(args.template_path) if args.template_path else DEFAULT_TEMPLATE
-    reference_body_path = (
-        Path(args.reference_body_path)
-        if args.reference_body_path
-        else (DEFAULT_REFERENCE_BODY if DEFAULT_REFERENCE_BODY.exists() else None)
-    )
     if handle_pre_v2_command(
         effective_command=effective_command,
         args=args,
@@ -424,16 +310,9 @@ def main():
         build_onepage_brief_from_structure=build_onepage_brief_from_structure,
         build_onepage_slide=build_onepage_slide,
         write_json_artifact=write_json_artifact,
-        build_deck_spec_from_structure=build_deck_spec_from_structure,
         load_deck_spec=load_deck_spec,
-        write_deck_spec=write_deck_spec,
-        apply_ai_content_layout_to_deck_spec=apply_ai_content_layout_to_deck_spec,
-        generate_ppt_artifacts_from_deck_spec=generate_ppt_artifacts_from_deck_spec,
         generate_visual_draft_artifacts=generate_visual_draft_artifacts,
         cli_execution_error_cls=CliExecutionError,
-        cli_user_input_error_cls=CliUserInputError,
-        template_path=template_path,
-        reference_body_path=reference_body_path,
     ):
         return
 

@@ -31,8 +31,6 @@ def resolve_effective_command(
         if normalized_command == "make":
             return "v2-make", explicit
         return normalized_command, explicit
-    if delivery_target == "sie-template":
-        return "sie-render", explicit
     if delivery_target == "v2":
         return "v2-make", explicit
     if args.full_pipeline or normalized_command == "make":
@@ -99,12 +97,8 @@ def validate_v2_option_compatibility(argv: list[str], *, effective_command: str,
 
 def validate_delivery_target_compatibility(*, args, explicit_command: bool, effective_command: str, parser) -> None:
     delivery_target = str(getattr(args, "delivery_target", "auto") or "auto").strip().lower()
-    if explicit_command and args.command == "make" and delivery_target == "sie-template":
-        parser.error("--delivery-target sie-template cannot be combined with explicit 'make'")
-    if is_v2_command(effective_command) and delivery_target == "sie-template":
-        parser.error("--delivery-target sie-template conflicts with V2 commands")
-    if effective_command == "sie-render" and delivery_target == "v2":
-        parser.error("--delivery-target v2 conflicts with SIE template commands")
+    if delivery_target == "sie-template":
+        parser.error("--delivery-target sie-template has been removed. Use V2 commands.")
 
 
 def resolve_v2_output_dir(*, output_dir: Path, args) -> Path:
