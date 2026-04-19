@@ -396,7 +396,7 @@ python -m pytest -q
 Run a focused V2 test set:
 
 ```powershell
-python -m pytest tests/test_v2_schema.py tests/test_v2_render.py tests/test_v2_visual_review.py -q
+python -m pytest tests/test_v2_services.py tests/test_v2_quality_checks.py tests/test_v2_visual_review.py -q
 ```
 
 Run a healthcheck:
