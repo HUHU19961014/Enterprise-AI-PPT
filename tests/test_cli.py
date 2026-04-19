@@ -44,7 +44,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
         help_text = stdout.getvalue()
         self.assertIn("Primary commands: make, batch-make, review, iterate", help_text)
-        self.assertIn("onepage --structure-json ...", help_text)
+        self.assertNotIn("onepage --structure-json ...", help_text)
         self.assertNotIn("onepage --topic ...", help_text)
         self.assertNotIn("{make,plan,render", help_text)
 
@@ -843,7 +843,7 @@ class CliTests(unittest.TestCase):
                 cli.main()
 
         self.assertEqual(ctx.exception.code, 2)
-        self.assertIn("--structure-json is required for command 'onepage'", stderr.getvalue())
+        self.assertIn("command 'onepage' has been removed", stderr.getvalue())
 
     def test_v2_plan_reuses_generation_context_between_outline_and_semantic_deck(self):
         stdout = io.StringIO()
@@ -1218,7 +1218,7 @@ class CliTests(unittest.TestCase):
         self.assertIsNotNone(clarify_mock.call_args.kwargs["session"])
 
     def test_onepage_uses_structure_json_input_path(self):
-        stdout = io.StringIO()
+        stderr = io.StringIO()
         structure_payload = {
             "core_message": "topic",
             "structure_type": "analysis",
@@ -1239,26 +1239,15 @@ class CliTests(unittest.TestCase):
                         "onepage",
                         "--structure-json",
                         str(structure_path),
-                        "--output-dir",
-                        temp_dir,
                     ],
                 ),
-                patch(
-                    "tools.sie_autoppt.cli.build_onepage_slide",
-                    return_value=(
-                        Path(temp_dir) / "onepage.pptx",
-                        Path(temp_dir) / "review.json",
-                        Path(temp_dir) / "score.json",
-                        object(),
-                    ),
-                ),
-                redirect_stdout(stdout),
+                redirect_stderr(stderr),
             ):
-                cli.main()
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
 
-        lines = [line.strip() for line in stdout.getvalue().splitlines() if line.strip()]
-        self.assertEqual(len(lines), 4)
-        self.assertTrue(lines[0].endswith(".onepage_brief.json"))
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("command 'onepage' has been removed", stderr.getvalue())
 
     def test_onepage_reports_ai_strategy_selection_failure(self):
         stderr = io.StringIO()
@@ -1286,17 +1275,13 @@ class CliTests(unittest.TestCase):
                         temp_dir,
                     ],
                 ),
-                patch(
-                    "tools.sie_autoppt.cli.build_onepage_slide",
-                    side_effect=cli.OpenAIResponsesError("model rejected the request"),
-                ),
                 redirect_stderr(stderr),
             ):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main()
 
-        self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("AI strategy selection failed for 'onepage'", stderr.getvalue())
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("command 'onepage' has been removed", stderr.getvalue())
 
     def test_onepage_rejects_non_auto_strategy_to_enforce_ai_selection(self):
         stderr = io.StringIO()
@@ -1330,7 +1315,7 @@ class CliTests(unittest.TestCase):
                     cli.main()
 
         self.assertEqual(ctx.exception.code, 2)
-        self.assertIn("--onepage-strategy must stay 'auto' for command 'onepage'", stderr.getvalue())
+        self.assertIn("command 'onepage' has been removed", stderr.getvalue())
 
     def test_visual_draft_returns_cli_execution_error_exit_code(self):
         stderr = io.StringIO()

@@ -7,8 +7,6 @@ from .config import DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_PREFIX, MAX_BODY_CHAPTERS
 
 RECOMMENDED_WORKFLOW_HELP = (
     "Recommended workflows:\n"
-    "  onepage --structure-json ...\n"
-    "                       AI-driven onepage render (strategy selected by model)\n"
     "  make --topic ...     semantic V2 full generation\n"
     "  batch-make --topic ...\n"
     "                       internal batch pipeline (bundle -> pptmaster -> tuning -> QA)\n"
@@ -16,10 +14,10 @@ RECOMMENDED_WORKFLOW_HELP = (
     "  iterate --deck-json  multi-round review alias for v2-iterate\n"
     "  visual-draft --deck-spec-json ...  HTML visual draft + scoring before PPTX\n"
     "Advanced commands:\n"
-    "  onepage, batch-make, v2-plan, v2-render, v2-compile, v2-patch,\n"
+    "  batch-make, v2-plan, v2-render, v2-compile, v2-patch,\n"
     "  v2-outline, v2-make, v2-review, v2-iterate, clarify, clarify-web, ai-check, visual-draft\n"
     "Legacy HTML/template generation commands are removed from primary CLI.\n"
-    "Note: onepage is agent-driven only; V2 workflows require a reachable AI endpoint."
+    "V2 workflows require a reachable AI endpoint."
 )
 
 
@@ -37,7 +35,7 @@ def build_main_parser() -> argparse.ArgumentParser:
         default="make",
         help=(
             "Primary commands: make, batch-make, review, iterate. "
-            "Use onepage for a single SIE body slide (agent-driven)."
+            "Use V2 workflow commands for AI-driven generation."
         ),
     )
     parser.add_argument("--template", default="", help=argparse.SUPPRESS)
@@ -205,7 +203,7 @@ def build_main_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--onepage-strategy",
         default="auto",
-        help="One-page strategy setting for onepage. Keep 'auto' to force AI strategy selection.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--delivery-target",
